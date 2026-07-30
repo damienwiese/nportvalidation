@@ -86,8 +86,8 @@
         <units>NC</units>
         <curCd>USD</curCd>
         <valUSD>-32386.85</valUSD>
-        <pctVal>-2.36</pctVal>
-        <payoffProfile>N/A</payoffProfile>
+        <pctVal>-8.27</pctVal>
+        <payoffProfile>Long</payoffProfile>
         <assetCat>DE</assetCat>
         <issuerConditional desc="N/A" issuerCat="OTHER"/>
         <invCountry>US</invCountry>
@@ -146,8 +146,8 @@
         <units>NC</units>
         <curCd>USD</curCd>
         <valUSD>9903.94</valUSD>
-        <pctVal>0.72</pctVal>
-        <payoffProfile>N/A</payoffProfile>
+        <pctVal>2.53</pctVal>
+        <payoffProfile>Long</payoffProfile>
         <assetCat>DE</assetCat>
         <issuerConditional desc="N/A" issuerCat="OTHER"/>
         <invCountry>US</invCountry>
@@ -206,7 +206,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>109938.91</valUSD>
-        <pctVal>8.02</pctVal>
+        <pctVal>28.06</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>STIV</assetCat>
         <issuerCat>RF</issuerCat>

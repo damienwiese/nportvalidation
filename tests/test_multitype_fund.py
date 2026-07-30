@@ -165,8 +165,9 @@ def _full_pipeline(holdings, filing_overrides=None):
 
 class TestBondFund:
     def test_validate_all_passes(self):
+        # valUSD and pctVal must tie to the $50M netAssets in _filing().
         holdings = [
-            _bond_h(pct_val="40.00"),
+            _bond_h(val_usd="20000000.00", pct_val="40.00"),
             _bond_h(
                 name="US Treasury", lei="254900HROIFWPRGM1V77",
                 title="US Treasury Note 4.25% 2028", cusip="91282CKV1",
@@ -187,7 +188,7 @@ class TestBondFund:
 
     def test_xml_has_debt_sec(self):
         holdings = [
-            _bond_h(pct_val="50.00"),
+            _bond_h(val_usd="25000000.00", pct_val="50.00"),
             _holding(
                 name="Cash", cusip="31846V336", isin="US31846V3362",
                 ticker="FGXX", asset_cat="STIV", issuer_cat="RF",
@@ -204,12 +205,13 @@ class TestBondFund:
 
 class TestBufferedETF:
     def test_validate_all_passes(self):
+        # valUSD and pctVal must tie to the $50M netAssets in _filing().
         holdings = [
-            _option_h(pct_val="30.00"),
+            _option_h(val_usd="15000000.00", pct_val="30.00"),
             _option_h(
                 name="SPX Put 4800", put_or_call="Put",
                 exercise_price="4800.00", delta="-0.28",
-                pct_val="12.00", val_usd="3000000.00",
+                pct_val="12.00", val_usd="6000000.00",
                 unrealized_appr="75000.00",
                 other_value="SPX-P4800-DEC26",
             ),
@@ -226,7 +228,7 @@ class TestBufferedETF:
 
     def test_xml_has_option_member(self):
         holdings = [
-            _option_h(pct_val="40.00"),
+            _option_h(val_usd="20000000.00", pct_val="40.00"),
             _holding(
                 name="Cash", cusip="31846V336", isin="US31846V3362",
                 ticker="FGXX", asset_cat="STIV", issuer_cat="RF",

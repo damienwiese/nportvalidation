@@ -87,7 +87,7 @@
         <curCd>USD</curCd>
         <valUSD>-14271.52</valUSD>
         <pctVal>-6.09</pctVal>
-        <payoffProfile>N/A</payoffProfile>
+        <payoffProfile>Long</payoffProfile>
         <assetCat>DE</assetCat>
         <issuerConditional desc="N/A" issuerCat="OTHER"/>
         <invCountry>US</invCountry>

@@ -313,7 +313,8 @@ def validate_holding(holding: Holding, index: int, rep_pd_end: str = "") -> tupl
     return errors, warnings
 
 
-def validate_holdings(holdings: list[Holding], rep_pd_end: str = "") -> tuple[list[str], list[str]]:
+def validate_holdings(holdings: list[Holding], rep_pd_end: str = "",
+                      net_assets: str = "") -> tuple[list[str], list[str]]:
     errors, warnings = [], []
 
     if not holdings:
@@ -329,6 +330,19 @@ def validate_holdings(holdings: list[Holding], rep_pd_end: str = "") -> tuple[li
 
     try:
         pct_sum = sum(float(h.pct_val) for h in holdings)
+        # The percentages must tie to the reported total: sum(pctVal) == sum(valUSD)/netAssets.
+        # This is exact regardless of how much cash the fund holds, unlike comparing to 100%
+        # (a fund that is 70% cash legitimately sums to 30%). A break here means pctVal and
+        # netAssets were computed off different denominators.
+        net = float(net_assets) if net_assets else 0.0
+        if net:
+            implied = sum(float(h.val_usd) for h in holdings) / net * 100.0
+            # Tolerance absorbs 2dp rounding across the holdings, nothing more.
+            if abs(pct_sum - implied) > max(0.5, 0.005 * len(holdings)):
+                errors.append(
+                    f"pctVal does not tie to netAssets: holdings sum to {pct_sum:.2f}% but "
+                    f"valUSD/netAssets implies {implied:.2f}% - the percentages and the "
+                    f"reported netAssets came from different denominators.")
         # Wider tolerance for derivative funds (leverage makes pctVal deviate)
         tolerance = 20.0 if has_derivatives else 5.0
         if abs(pct_sum - 100.0) > tolerance:
@@ -352,7 +366,7 @@ def validate_all(
     for fn, args in [
         (validate_config, (config,)),
         (validate_filing, (filing, today)),
-        (validate_holdings, (holdings, filing.rep_pd_end)),
+        (validate_holdings, (holdings, filing.rep_pd_end, filing.net_assets)),
     ]:
         e, w = fn(*args)
         errors.extend(e)

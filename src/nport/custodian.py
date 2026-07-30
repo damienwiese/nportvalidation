@@ -586,6 +586,11 @@ def parse_swap_ticker(stock_ticker: str) -> ParsedSwap:
     else:
         raise ValueError(f"Cannot parse swap ticker suffix: '{parts[1]}'")
     termination_dt = datetime.strptime(date_str, "%m/%d/%y").strftime("%Y-%m-%d")
+    # This drives the filed payoffProfile, so an unrecognized code must fail loudly
+    # rather than silently defaulting to one side.
+    if direction_code not in ("L", "S"):
+        raise ValueError(
+            f"Unknown swap direction code {direction_code!r} in '{stock_ticker}' (expected L or S)")
     direction = "Long" if direction_code == "L" else "Short"
     return ParsedSwap(
         ref_cusip=ref_cusip,
@@ -715,7 +720,9 @@ def transform_to_holding_dict(
             "units": "NC",
             "val_usd": "",
             "pct_val": "",
-            "payoff_profile": "N/A",
+            # Long/Short is the direction code carried in the custodian ticker
+            # (…-TRS-<date>-L[-CP]), not the share sign — a swap's balance is always 1.
+            "payoff_profile": swap.direction,
             "asset_cat": "DE",
             "issuer_cat": "OTHER",
             "issuer_conditional_desc": "N/A",
@@ -987,6 +994,7 @@ def _copy_with_updates(
 
 def ingest_account(
     rows: list[CustodianRow], fund_dir: Path, period: str,
+    net_assets: float | None = None,
 ) -> tuple[list[dict[str, str]], list[str]]:
     """Transform custodian rows into enriched holding dicts.
 
@@ -997,6 +1005,10 @@ def ingest_account(
         rows: CustodianRow list for a single account.
         fund_dir: Fund directory (contains security_master.csv).
         period: Filing period string (unused here but kept for API symmetry).
+        net_assets: The net assets the filing will actually report (from
+            filing_data.txt, which EagleSTAR may have overridden). Every
+            ``pct_val`` is restated against it so the percentages tie to the
+            reported total. Defaults to the custodian's own net assets.
 
     Returns:
         (enriched holding dicts, list of warning/error messages).
@@ -1034,15 +1046,19 @@ def ingest_account(
     # The merge may have filled val_usd from a stale security_master.csv that still carries
     # the notional; override it here so the build is correct regardless of that column. The
     # custodian MarketValue (= shares x price = notional) only ever belongs in notional_amt.
-    # pct_val is the MTM as a % of net assets (constant per account in the custodian feed).
-    net_assets = _parse_float(rows[0].net_assets) if rows else 0.0
     for h in holdings:
         if h.get("deriv_cat") == "SWP":
-            ua = (h.get("unrealized_appr") or "").strip()
-            h["val_usd"] = ua
-            h["pct_val"] = (
-                f"{_parse_float(ua) / net_assets * 100:.2f}" if ua and net_assets else ""
-            )
+            h["val_usd"] = (h.get("unrealized_appr") or "").strip()
+
+    # Restate every pct_val against the net assets the filing reports. The custodian's own
+    # `weightings` column is a percentage of the CUSTODIAN's net assets, but EagleSTAR is the
+    # writer for the filed netAssets — where the two differ, keeping the custodian percentages
+    # would make the filing contradict itself (sum(pctVal) != sum(valUSD)/netAssets).
+    denom = net_assets if net_assets is not None else (
+        _parse_float(rows[0].net_assets) if rows else 0.0)
+    for h in holdings:
+        val = (h.get("val_usd") or "").strip()
+        h["pct_val"] = f"{_parse_float(val) / denom * 100:.2f}" if val and denom else ""
 
     # Validate required fields after merge
     merge_errors = validate_after_merge(holdings)

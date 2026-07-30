@@ -427,7 +427,8 @@ class TestTransformSwap:
         assert d["cusip"] == "N/A"
         assert d["ticker"] == "02079K305-TRS-05/31/27-L-CANT"
         assert d["balance"] == "1"
-        assert d["payoff_profile"] == "N/A"
+        # Long/Short comes from the ticker's direction code (…-L-CANT), not the share sign
+        assert d["payoff_profile"] == "Long"
         assert d["issuer_cat"] == "OTHER"
         assert d["issuer_conditional_desc"] == "N/A"
         assert d["deriv_cat"] == "SWP"
@@ -465,6 +466,25 @@ class TestTransformSwap:
         assert d["ref_cusip"] == "218946101"
         assert d["termination_dt"] == "2028-01-19"
         assert d["other_value"] == "218946101-TRS-01/19/28-L"
+        # Direction resolves from the trailing code even with no counterparty segment
+        assert d["payoff_profile"] == "Long"
+
+    def test_short_swap_payoff_profile(self):
+        r = _row(
+            stock_ticker="02079K305-TRS-05/31/27-S-CANT",
+            security_name="ALPHABET INC.-SWAP-CANT-S",
+        )
+        d = transform_to_holding_dict(r, HoldingType.SWAP)
+        assert d["payoff_profile"] == "Short"
+
+    def test_unknown_direction_code_raises(self):
+        """An unrecognized direction code must fail loudly, not default to a side."""
+        r = _row(
+            stock_ticker="02079K305-TRS-05/31/27-X-CANT",
+            security_name="ALPHABET INC.-SWAP-CANT-X",
+        )
+        with pytest.raises(ValueError, match="Unknown swap direction code"):
+            transform_to_holding_dict(r, HoldingType.SWAP)
 
 
 # ── TestTransformTreasury ────────────────────────────────────

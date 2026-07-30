@@ -87,7 +87,7 @@
         <curCd>USD</curCd>
         <valUSD>-54651.54</valUSD>
         <pctVal>-0.63</pctVal>
-        <payoffProfile>N/A</payoffProfile>
+        <payoffProfile>Long</payoffProfile>
         <assetCat>DE</assetCat>
         <issuerConditional desc="N/A" issuerCat="OTHER"/>
         <invCountry>US</invCountry>
@@ -147,7 +147,7 @@
         <curCd>USD</curCd>
         <valUSD>-33192.09</valUSD>
         <pctVal>-0.38</pctVal>
-        <payoffProfile>N/A</payoffProfile>
+        <payoffProfile>Long</payoffProfile>
         <assetCat>DE</assetCat>
         <issuerConditional desc="N/A" issuerCat="OTHER"/>
         <invCountry>US</invCountry>
@@ -207,7 +207,7 @@
         <curCd>USD</curCd>
         <valUSD>-2681.45</valUSD>
         <pctVal>-0.03</pctVal>
-        <payoffProfile>N/A</payoffProfile>
+        <payoffProfile>Long</payoffProfile>
         <assetCat>DE</assetCat>
         <issuerConditional desc="N/A" issuerCat="OTHER"/>
         <invCountry>US</invCountry>
@@ -267,7 +267,7 @@
         <curCd>USD</curCd>
         <valUSD>-12970.95</valUSD>
         <pctVal>-0.15</pctVal>
-        <payoffProfile>N/A</payoffProfile>
+        <payoffProfile>Long</payoffProfile>
         <assetCat>DE</assetCat>
         <issuerConditional desc="N/A" issuerCat="OTHER"/>
         <invCountry>US</invCountry>
@@ -327,7 +327,7 @@
         <curCd>USD</curCd>
         <valUSD>-66723.03</valUSD>
         <pctVal>-0.77</pctVal>
-        <payoffProfile>N/A</payoffProfile>
+        <payoffProfile>Long</payoffProfile>
         <assetCat>DE</assetCat>
         <issuerConditional desc="N/A" issuerCat="OTHER"/>
         <invCountry>US</invCountry>
@@ -387,7 +387,7 @@
         <curCd>USD</curCd>
         <valUSD>-32803.25</valUSD>
         <pctVal>-0.38</pctVal>
-        <payoffProfile>N/A</payoffProfile>
+        <payoffProfile>Long</payoffProfile>
         <assetCat>DE</assetCat>
         <issuerConditional desc="N/A" issuerCat="OTHER"/>
         <invCountry>US</invCountry>
@@ -447,7 +447,7 @@
         <curCd>USD</curCd>
         <valUSD>-12189.34</valUSD>
         <pctVal>-0.14</pctVal>
-        <payoffProfile>N/A</payoffProfile>
+        <payoffProfile>Long</payoffProfile>
         <assetCat>DE</assetCat>
         <issuerConditional desc="N/A" issuerCat="OTHER"/>
         <invCountry>US</invCountry>

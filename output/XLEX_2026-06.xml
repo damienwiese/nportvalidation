@@ -86,8 +86,8 @@
         <units>NC</units>
         <curCd>USD</curCd>
         <valUSD>-80116.92</valUSD>
-        <pctVal>-24.93</pctVal>
-        <payoffProfile>N/A</payoffProfile>
+        <pctVal>-14.96</pctVal>
+        <payoffProfile>Long</payoffProfile>
         <assetCat>DE</assetCat>
         <issuerConditional desc="N/A" issuerCat="OTHER"/>
         <invCountry>US</invCountry>
@@ -146,7 +146,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>47928.68</valUSD>
-        <pctVal>14.92</pctVal>
+        <pctVal>8.95</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>STIV</assetCat>
         <issuerCat>RF</issuerCat>

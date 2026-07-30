@@ -86,7 +86,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>6269152.32</valUSD>
-        <pctVal>1.64</pctVal>
+        <pctVal>1.65</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -138,7 +138,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>4314654.40</valUSD>
-        <pctVal>1.13</pctVal>
+        <pctVal>1.14</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -190,7 +190,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>23552910.30</valUSD>
-        <pctVal>6.17</pctVal>
+        <pctVal>6.21</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -216,7 +216,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>32896813.74</valUSD>
-        <pctVal>8.61</pctVal>
+        <pctVal>8.68</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -242,7 +242,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>5235810.72</valUSD>
-        <pctVal>1.37</pctVal>
+        <pctVal>1.38</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -268,7 +268,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>4894509.40</valUSD>
-        <pctVal>1.28</pctVal>
+        <pctVal>1.29</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -294,7 +294,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>12357176.60</valUSD>
-        <pctVal>3.23</pctVal>
+        <pctVal>3.26</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -320,7 +320,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>14649670.00</valUSD>
-        <pctVal>3.83</pctVal>
+        <pctVal>3.86</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -346,7 +346,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>12191164.78</valUSD>
-        <pctVal>3.19</pctVal>
+        <pctVal>3.22</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -372,7 +372,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>10056471.92</valUSD>
-        <pctVal>2.63</pctVal>
+        <pctVal>2.65</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -398,7 +398,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>11534676.00</valUSD>
-        <pctVal>3.02</pctVal>
+        <pctVal>3.04</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>STIV</assetCat>
         <issuerCat>RF</issuerCat>
@@ -424,7 +424,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>7573706.10</valUSD>
-        <pctVal>1.98</pctVal>
+        <pctVal>2.00</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -450,7 +450,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>6409437.24</valUSD>
-        <pctVal>1.68</pctVal>
+        <pctVal>1.69</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -476,7 +476,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>892576.80</valUSD>
-        <pctVal>0.23</pctVal>
+        <pctVal>0.24</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -502,7 +502,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>19205997.30</valUSD>
-        <pctVal>5.03</pctVal>
+        <pctVal>5.07</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -528,7 +528,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>3911928.44</valUSD>
-        <pctVal>1.02</pctVal>
+        <pctVal>1.03</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -554,7 +554,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>4594904.32</valUSD>
-        <pctVal>1.20</pctVal>
+        <pctVal>1.21</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -580,7 +580,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>19233590.40</valUSD>
-        <pctVal>5.03</pctVal>
+        <pctVal>5.07</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -606,7 +606,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>4763288.88</valUSD>
-        <pctVal>1.25</pctVal>
+        <pctVal>1.26</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -632,7 +632,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>13477109.88</valUSD>
-        <pctVal>3.53</pctVal>
+        <pctVal>3.55</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -658,7 +658,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>22981986.40</valUSD>
-        <pctVal>6.02</pctVal>
+        <pctVal>6.06</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -710,7 +710,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>13278279.60</valUSD>
-        <pctVal>3.48</pctVal>
+        <pctVal>3.50</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -762,7 +762,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>11935575.36</valUSD>
-        <pctVal>3.12</pctVal>
+        <pctVal>3.15</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -788,7 +788,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>6888944.00</valUSD>
-        <pctVal>1.80</pctVal>
+        <pctVal>1.82</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -814,7 +814,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>8348792.28</valUSD>
-        <pctVal>2.19</pctVal>
+        <pctVal>2.20</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -840,7 +840,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>8590918.40</valUSD>
-        <pctVal>2.25</pctVal>
+        <pctVal>2.27</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -866,7 +866,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>6294905.88</valUSD>
-        <pctVal>1.65</pctVal>
+        <pctVal>1.66</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -892,7 +892,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>5930783.60</valUSD>
-        <pctVal>1.55</pctVal>
+        <pctVal>1.56</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -970,7 +970,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>3264090.44</valUSD>
-        <pctVal>0.85</pctVal>
+        <pctVal>0.86</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -1022,7 +1022,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>37608088.96</valUSD>
-        <pctVal>9.84</pctVal>
+        <pctVal>9.92</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -1048,7 +1048,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>6937145.28</valUSD>
-        <pctVal>1.82</pctVal>
+        <pctVal>1.83</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -1074,7 +1074,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>6829652.16</valUSD>
-        <pctVal>1.79</pctVal>
+        <pctVal>1.80</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>
@@ -1100,7 +1100,7 @@
         <units>NS</units>
         <curCd>USD</curCd>
         <valUSD>7376715.36</valUSD>
-        <pctVal>1.93</pctVal>
+        <pctVal>1.95</pctVal>
         <payoffProfile>Long</payoffProfile>
         <assetCat>EC</assetCat>
         <issuerCat>CORP</issuerCat>

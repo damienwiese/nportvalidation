@@ -594,8 +594,16 @@ def _ingest_one(args) -> None:
     if args.verbose:
         print(f"Account {account}: {len(account_rows)} custodian rows")
 
-    # 4. Transform + merge + validate
-    enriched, messages = ingest_account(account_rows, fund_dir, args.period)
+    # 4. Transform + merge + validate. pct_val is restated against the net assets the filing
+    #    will report (EagleSTAR may have overridden the custodian's), so the percentages tie
+    #    to the reported total. filing_data.txt is written by `split`, before build.
+    loader = DataLoader(fund_dir)
+    try:
+        filed_net_assets = _fnum(loader.load_filing(args.period).net_assets) or None
+    except (FileNotFoundError, ValueError):
+        filed_net_assets = None   # reported below by the step-6 load, with a proper message
+    enriched, messages = ingest_account(account_rows, fund_dir, args.period,
+                                        net_assets=filed_net_assets)
 
     # Log messages. A missing required field OR any "ERROR:"-tagged message (unclassifiable
     # row, parse failure) is build-blocking — fail loud, never ship a silently-dropped holding.
@@ -626,7 +634,6 @@ def _ingest_one(args) -> None:
 
     # 6. Load back via standard pipeline
     try:
-        loader = DataLoader(fund_dir)
         config = loader.load_config()
         filing = loader.load_filing(args.period)
         holdings = loader.load_holdings(args.period)
