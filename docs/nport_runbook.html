@@ -143,6 +143,37 @@
   }
   ul.tight{ margin:4px 0 9px; padding-left:17px; }
   ul.tight li{ margin-bottom:3px; }
+
+  /* ---------- provenance ---------- */
+  .legend{ margin:2px 0 10px; }
+  .tag{
+    display:inline-block; padding:1.5px 7px; border-radius:9px; margin-right:5px;
+    font-size:7.6pt; font-weight:600; letter-spacing:.03em; white-space:nowrap;
+    border:1px solid rgba(0,0,0,.09);
+  }
+  .tag.cust  { background:#e3edf7; color:#1a4a72; }
+  .tag.bbg   { background:#e6f0e8; color:#1f6b46; }
+  .tag.eag   { background:#f2e9f5; color:#6b3d7a; }
+  .tag.human { background:#fdf0e3; color:#8a5a00; }
+  .tag.manual{ background:#fbe8e8; color:#9b2c2c; }
+  .tag.cfg   { background:#e8e9ec; color:#414958; }
+  .tag.tool  { background:#eef0f2; color:#5b636e; }
+  .tag.deriv { background:#e9f2f4; color:#1f5f6b; }
+  .tag.ap    { background:#f0eee4; color:#6b6330; }
+
+  table.prov{ font-size:8.5pt; margin-top:4px; }
+  table.prov td{ padding:4.5px 7px; }
+  table.prov th{ padding:6px 7px; }
+  table.prov td.f{ font-size:8.1pt; color:var(--ink); font-weight:600; width:24%; }
+  table.prov td.cite{ font-size:7.4pt; color:var(--muted); white-space:nowrap; width:20%; }
+  table.prov tr.grp td{
+    background:var(--accent); color:#fff; font-weight:600; font-size:8.2pt;
+    text-transform:uppercase; letter-spacing:.07em; padding:4px 8px;
+  }
+  b.nofeed{
+    display:inline-block; background:var(--bad-soft); color:var(--bad);
+    font-size:7pt; padding:1px 5px; border-radius:3px; margin-left:2px;
+  }
   .footer{ margin-top:22px; border-top:1px solid var(--rule); padding-top:9px; font-size:8.4pt; color:var(--muted); }
 </style>
 </head>
@@ -441,6 +472,111 @@ nport build</pre>
     all figures verified against the working tree at branch <span class="mono">humanreview-live-gate</span>
   </div>
 </section>
+
+<!-- PROVENANCE:BEGIN -->
+<section><h2>4 &middot; Where every data point comes from</h2><div class="h2rule"></div>
+<p class="lead">Generated from the code by <span class="mono">scripts/field_provenance.py</span>, not written by hand. Every row cites the file and line that sets it, and the script refuses to run if a claim no longer matches the code.</p>
+<div class="legend">
+<span class="tag cust">Custodian</span>
+<span class="tag bbg">Bloomberg</span>
+<span class="tag eag">EagleSTAR</span>
+<span class="tag human">Human review</span>
+<span class="tag manual">Manual (workbook)</span>
+<span class="tag cfg">fund_config.txt</span>
+<span class="tag tool">Tool constant</span>
+<span class="tag deriv">Derived</span>
+</div>
+<div class="box info"><h4>One writer per field</h4><p>Each row below has exactly one source. A second system may <i>check</i> a value — the AP order book cross-checks EagleSTAR&rsquo;s flows, the custodian cross-checks net assets — but a cross-check never writes the filing. Disagreements go to <span class="mono">reconciliation_2026-06.csv</span> and block a LIVE filing until resolved.</p></div>
+<table class="prov"><tr><th>Field</th><th>Source</th><th>How it is obtained</th><th>Code reference</th></tr>
+<tr class="grp"><td colspan="4">Fund identity</td></tr>
+<tr><td class="mono f">cik</td><td><span class="tag cfg">fund_config.txt</span></td><td>Typed once when the fund launches</td><td class="mono cite">src/nport/config.py:209</td></tr>
+<tr><td class="mono f">seriesId</td><td><span class="tag cfg">fund_config.txt</span></td><td>From the SEC series guide spreadsheet</td><td class="mono cite">src/nport/config.py:209</td></tr>
+<tr><td class="mono f">classId</td><td><span class="tag cfg">fund_config.txt</span></td><td>From the SEC series guide spreadsheet</td><td class="mono cite">src/nport/config.py:209</td></tr>
+<tr><td class="mono f">seriesName</td><td><span class="tag cfg">fund_config.txt</span></td><td>Typed once when the fund launches</td><td class="mono cite">src/nport/config.py:209</td></tr>
+<tr><td class="mono f">seriesLei</td><td><span class="tag cfg">fund_config.txt</span></td><td>Typed once (GLEIF-issued)</td><td class="mono cite">src/nport/config.py:209</td></tr>
+<tr><td class="mono f">regName / regCik / regLei</td><td><span class="tag cfg">fund_config.txt</span></td><td>Trust-level, same for every fund</td><td class="mono cite">src/nport/config.py:209</td></tr>
+<tr><td class="mono f">regStreet1 … regZip / regPhone</td><td><span class="tag cfg">fund_config.txt</span></td><td>Trust address, set once</td><td class="mono cite">src/nport/config.py:209</td></tr>
+<tr><td class="mono f">signerName / signerTitle / signerOrg</td><td><span class="tag cfg">fund_config.txt</span></td><td>Who signs the filing</td><td class="mono cite">src/nport/config.py:209</td></tr>
+<tr class="grp"><td colspan="4">Holding identity</td></tr>
+<tr><td class="mono f">name</td><td><span class="tag cust">Custodian</span></td><td>SecurityName, truncated to 30 chars</td><td class="mono cite">src/nport/custodian.py:245</td></tr>
+<tr><td class="mono f">title</td><td><span class="tag cust">Custodian</span></td><td>SecurityName verbatim</td><td class="mono cite">src/nport/custodian.py:247</td></tr>
+<tr><td class="mono f">cusip</td><td><span class="tag cust">Custodian</span></td><td>Copied via =custodian! cell reference; foreign CINS → N/A</td><td class="mono cite">src/nport/custodian.py:671</td></tr>
+<tr><td class="mono f">ticker</td><td><span class="tag cust">Custodian</span></td><td>StockTicker column</td><td class="mono cite">src/nport/custodian.py:226</td></tr>
+<tr><td class="mono f">isin</td><td><span class="tag bbg">Bloomberg</span></td><td>=BDP(bbgid, "ID_ISIN")</td><td class="mono cite">src/nport/master_sheet.py:152</td></tr>
+<tr><td class="mono f">lei</td><td><span class="tag bbg">Bloomberg</span></td><td>=BDP(bbgid, "LEGAL_ENTITY_IDENTIFIER"); N/A if the issuer has none</td><td class="mono cite">src/nport/master_sheet.py:153</td></tr>
+<tr><td class="mono f">invCountry</td><td><span class="tag bbg">Bloomberg</span></td><td>=BDP(bbgid, "CNTRY_OF_DOMICILE") — no default, a blank is a real gap</td><td class="mono cite">src/nport/master_sheet.py:154</td></tr>
+<tr class="grp"><td colspan="4">Position</td></tr>
+<tr><td class="mono f">balance</td><td><span class="tag cust">Custodian</span></td><td>Shares / par from the custodian</td><td class="mono cite">src/nport/custodian.py:676</td></tr>
+<tr><td class="mono f">units</td><td><span class="tag tool">Tool constant</span></td><td>Set by holding type: NS shares, PA par, NC contracts</td><td class="mono cite">src/nport/custodian.py:677</td></tr>
+<tr><td class="mono f">curCd</td><td><span class="tag tool">Tool constant</span></td><td>USD — the book currency for every fund</td><td class="mono cite">src/nport/custodian.py:641</td></tr>
+<tr><td class="mono f">valUSD</td><td><span class="tag cust">Custodian</span></td><td>MarketValue. Swaps override to the EagleSTAR mark-to-market</td><td class="mono cite">src/nport/custodian.py:642</td></tr>
+<tr><td class="mono f">valUSD (swaps)</td><td><span class="tag eag">EagleSTAR</span></td><td>PVal Total Unreal G/L Base — the MTM, never the notional</td><td class="mono cite">src/nport/custodian.py:1051</td></tr>
+<tr><td class="mono f">pctVal</td><td><span class="tag deriv">Derived</span></td><td>valUSD ÷ the netAssets the filing reports (not the custodian's)</td><td class="mono cite">src/nport/custodian.py:1053</td></tr>
+<tr><td class="mono f">payoffProfile</td><td><span class="tag cust">Custodian</span></td><td>Sign of the share count; for swaps the ticker's L/S code</td><td class="mono cite">src/nport/custodian.py:725</td></tr>
+<tr><td class="mono f">assetCat</td><td><span class="tag tool">Tool constant</span></td><td>Set by classification: EC / DBT / DE / STIV</td><td class="mono cite">src/nport/custodian.py:493</td></tr>
+<tr><td class="mono f">issuerCat</td><td><span class="tag tool">Tool constant</span></td><td>Set by classification: CORP / UST / RF / OTHER</td><td class="mono cite">src/nport/custodian.py:679</td></tr>
+<tr><td class="mono f">fairValLevel</td><td><span class="tag tool">Tool constant</span></td><td>1 for listed, 2 for derivatives</td><td class="mono cite">src/nport/custodian.py:680</td></tr>
+<tr><td class="mono f">isRestrictedSec / isCashCollateral / isNonCashCollateral / isLoanByFund</td><td><span class="tag tool">Tool constant</span></td><td>N for every ETF holding</td><td class="mono cite">src/nport/custodian.py:645</td></tr>
+<tr class="grp"><td colspan="4">Debt (C.9)</td></tr>
+<tr><td class="mono f">maturityDt</td><td><span class="tag bbg">Bloomberg</span></td><td>=BDP(cusip Govt/Corp, "MATURITY")</td><td class="mono cite">src/nport/master_sheet.py:171</td></tr>
+<tr><td class="mono f">annualizedRt</td><td><span class="tag bbg">Bloomberg</span></td><td>=BDP(cusip Govt/Corp, "CPN")</td><td class="mono cite">src/nport/master_sheet.py:172</td></tr>
+<tr><td class="mono f">couponKind</td><td><span class="tag bbg">Bloomberg</span></td><td>=BDP(… "CPN_TYP"), mapped to the N-PORT enum</td><td class="mono cite">src/nport/master_sheet.py:173</td></tr>
+<tr><td class="mono f">isDefault / areIntrstPmntsInArrs / isPaidKind</td><td><span class="tag tool">Tool constant</span></td><td>N — no defaulted debt held</td><td class="mono cite">src/nport/custodian.py:760</td></tr>
+<tr class="grp"><td colspan="4">Option</td></tr>
+<tr><td class="mono f">putOrCall</td><td><span class="tag cust">Custodian</span></td><td>Parsed from the position name (trailing C / P)</td><td class="mono cite">src/nport/custodian.py:520</td></tr>
+<tr><td class="mono f">exercisePrice</td><td><span class="tag cust">Custodian</span></td><td>Parsed from the position name (strike)</td><td class="mono cite">src/nport/custodian.py:697</td></tr>
+<tr><td class="mono f">expDt</td><td><span class="tag cust">Custodian</span></td><td>Parsed from the position name (expiry)</td><td class="mono cite">src/nport/custodian.py:699</td></tr>
+<tr><td class="mono f">writtenOrPur</td><td><span class="tag cust">Custodian</span></td><td>Sign of the contract count</td><td class="mono cite">src/nport/custodian.py:700</td></tr>
+<tr><td class="mono f">shareNo</td><td><span class="tag tool">Tool constant</span></td><td>N/A — index options are on an index, not a share count</td><td class="mono cite">src/nport/custodian.py:695</td></tr>
+<tr><td class="mono f">delta</td><td><span class="tag manual">Manual (workbook)</span> <b class="nofeed">NO FEED</b></td><td>FLEX options do not price on Bloomberg. Typed into security_master.xlsx and preserved across rebuilds — from your risk system</td><td class="mono cite">src/nport/master_sheet.py:585</td></tr>
+<tr><td class="mono f">refIndexName / refIndexIdentifier</td><td><span class="tag human">Human review</span></td><td>option_index sheet → applied at split</td><td class="mono cite">src/nport/master_sheet.py:786</td></tr>
+<tr><td class="mono f">counterpartyName / counterpartyLei</td><td><span class="tag tool">Tool constant</span></td><td>The Options Clearing Corporation — every listed/FLEX option clears through it</td><td class="mono cite">src/nport/custodian.py:91</td></tr>
+<tr class="grp"><td colspan="4">Swap</td></tr>
+<tr><td class="mono f">swapFlag</td><td><span class="tag tool">Tool constant</span></td><td>Y for every TRS</td><td class="mono cite">src/nport/custodian.py:732</td></tr>
+<tr><td class="mono f">terminationDt</td><td><span class="tag cust">Custodian</span></td><td>Parsed from the swap ticker (…-TRS-<date>-…)</td><td class="mono cite">src/nport/custodian.py:733</td></tr>
+<tr><td class="mono f">notionalAmt</td><td><span class="tag cust">Custodian</span></td><td>MarketValue = shares × price — the contract size</td><td class="mono cite">src/nport/custodian.py:734</td></tr>
+<tr><td class="mono f">unrealizedAppr</td><td><span class="tag eag">EagleSTAR</span></td><td>PVal Total Unreal G/L Base, matched on Primary Asset ID</td><td class="mono cite">src/nport/eaglestar.py:231</td></tr>
+<tr><td class="mono f">counterpartyName / counterpartyLei</td><td><span class="tag human">Human review</span></td><td>swap_counterparties sheet — ticker code → legal name + GLEIF LEI</td><td class="mono cite">src/nport/master_sheet.py:773</td></tr>
+<tr><td class="mono f">recFixedOrFloating / recDesc</td><td><span class="tag human">Human review</span></td><td>swap_legs sheet — from the trade confirm</td><td class="mono cite">src/nport/master_sheet.py:758</td></tr>
+<tr><td class="mono f">pmntFloatingRtIndex / pmntFloatingRtSpread / pmntRateTenor / pmntRateUnit</td><td><span class="tag human">Human review</span></td><td>swap_legs sheet — from the trade confirm</td><td class="mono cite">src/nport/master_sheet.py:758</td></tr>
+<tr><td class="mono f">refCusip</td><td><span class="tag cust">Custodian</span></td><td>Leading segment of the swap ticker</td><td class="mono cite">src/nport/custodian.py:740</td></tr>
+<tr><td class="mono f">refIsin / refTicker / refIssuerName / refIssueTitle</td><td><span class="tag bbg">Bloomberg</span></td><td>=BDP(refCusip Equity, …) on the reference security</td><td class="mono cite">src/nport/master_sheet.py:190</td></tr>
+<tr class="grp"><td colspan="4">Fund financials (B.1)</td></tr>
+<tr><td class="mono f">totAssets</td><td><span class="tag eag">EagleSTAR</span></td><td>Trial Balance total assets</td><td class="mono cite">src/nport/eaglestar.py:307</td></tr>
+<tr><td class="mono f">totLiabs</td><td><span class="tag eag">EagleSTAR</span></td><td>Trial Balance total liabilities</td><td class="mono cite">src/nport/eaglestar.py:309</td></tr>
+<tr><td class="mono f">netAssets</td><td><span class="tag eag">EagleSTAR</span></td><td>Trial Balance net assets (overrides the custodian figure)</td><td class="mono cite">src/nport/eaglestar.py:311</td></tr>
+<tr><td class="mono f">amtPayOneYrOther</td><td><span class="tag eag">EagleSTAR</span></td><td>Trial Balance payables</td><td class="mono cite">src/nport/eaglestar.py:304</td></tr>
+<tr><td class="mono f">assetsAttrMiscSec / assetsInvested / delayDeliv / standByCommit / liquidPref</td><td><span class="tag tool">Tool constant</span></td><td>0 — a genuine zero for a plain ETF, not a placeholder</td><td class="mono cite">src/nport/filing_master.py:72</td></tr>
+<tr><td class="mono f">amtPayOneYr* / amtPayAftOneYr* (other lines)</td><td><span class="tag tool">Tool constant</span></td><td>0 — no borrowings or affiliate payables</td><td class="mono cite">src/nport/filing_master.py:72</td></tr>
+<tr class="grp"><td colspan="4">Returns (B.5)</td></tr>
+<tr><td class="mono f">rtn1 / rtn2 / rtn3</td><td><span class="tag bbg">Bloomberg</span></td><td>=BDP total return over each reporting month; N/A before inception</td><td class="mono cite">src/nport/filing_master.py:45</td></tr>
+<tr class="grp"><td colspan="4">Gains (B.5)</td></tr>
+<tr><td class="mono f">netRealizedGainMon1-3</td><td><span class="tag eag">EagleSTAR</span></td><td>Trial Balance month-end deltas</td><td class="mono cite">src/nport/eaglestar.py:300</td></tr>
+<tr><td class="mono f">netUnrealizedApprMon1-3</td><td><span class="tag eag">EagleSTAR</span></td><td>Trial Balance month-end deltas</td><td class="mono cite">src/nport/eaglestar.py:301</td></tr>
+<tr class="grp"><td colspan="4">Flows (B.2)</td></tr>
+<tr><td class="mono f">mon1-3Sales / mon1-3Redemption</td><td><span class="tag eag">EagleSTAR</span></td><td>Trial Balance subscriptions/redemptions. AP order book cross-checks only</td><td class="mono cite">src/nport/eaglestar.py:337</td></tr>
+<tr><td class="mono f">mon1-3Reinvestment</td><td><span class="tag tool">Tool constant</span> <b class="nofeed">NO FEED</b></td><td>Not in an order book — needs the transfer agent</td><td class="mono cite">src/nport/filing_master.py:80</td></tr>
+<tr class="grp"><td colspan="4">Risk (B.3)</td></tr>
+<tr><td class="mono f">durAdj / spreadDur</td><td><span class="tag bbg">Bloomberg</span></td><td>=BDP DUR_ADJ_MID / OAS_SPREAD_DUR_MID per debt holding</td><td class="mono cite">src/nport/filing_master.py:50</td></tr>
+<tr><td class="mono f">maturity / ratingSP</td><td><span class="tag bbg">Bloomberg</span></td><td>=BDP MATURITY / RTG_SP, bucketed by tenor</td><td class="mono cite">src/nport/filing_master.py:50</td></tr>
+<tr class="grp"><td colspan="4">Index (B.6)</td></tr>
+<tr><td class="mono f">nameDesignatedIndex / indexIdentifier</td><td><span class="tag human">Human review</span></td><td>designated_index sheet — from the prospectus</td><td class="mono cite">src/nport/humanreview.py:91</td></tr>
+<tr class="grp"><td colspan="4">Admin</td></tr>
+<tr><td class="mono f">submissionType / isFinalFiling / isNonCashCollateral</td><td><span class="tag tool">Tool constant</span></td><td>NPORT-P / N / N</td><td class="mono cite">src/nport/filing_master.py:62</td></tr>
+<tr><td class="mono f">liveTestFlag</td><td><span class="tag tool">Tool constant</span></td><td>TEST until you flip it; LIVE is gated on a clean reconciliation</td><td class="mono cite">src/nport/cli.py:878</td></tr>
+<tr><td class="mono f">repPdEnd / repPdDate</td><td><span class="tag deriv">Derived</span></td><td>Last calendar day of the filing period</td><td class="mono cite">src/nport/custodian.py:805</td></tr>
+<tr><td class="mono f">dateSigned</td><td><span class="tag deriv">Derived</span></td><td>Set from the period; override in the workbook</td><td class="mono cite">src/nport/filing_master.py:115</td></tr>
+</table>
+<h3>Verified at generation time</h3><ul class="tight">
+<li>65 rows: code anchor located for each</li>
+<li>Bloomberg claims checked against BLOOMBERG_SPECS (10 cols) + risk sheet (4 cols)</li>
+<li>EagleSTAR claims checked against 17 writer keys</li>
+<li>Human-review claims checked against 15 review value columns</li>
+<li>Custodian claims checked against 67 transform-assigned keys</li>
+<li>filing_master HEADER: 45 columns, 0 unmapped</li>
+<li>Coverage measured over <b>1,996 holdings</b> across <b>104 funds</b> in period 2026-06</li></ul>
+</section>
+<!-- PROVENANCE:END -->
 
 </body>
 </html>
