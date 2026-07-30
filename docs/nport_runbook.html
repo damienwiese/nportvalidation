@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>N-PORT Filing — Pipeline &amp; Runbook</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 16mm 16mm; }
+
+  :root{
+    --ink:#14181f;      --body:#333a45;   --muted:#6b7480;
+    --rule:#dfe3e8;     --soft:#f5f7f9;
+    --accent:#1f4e79;   --accent-soft:#eaf0f6;
+    --warn:#8a5a00;     --warn-soft:#fdf5e6;
+    --bad:#9b2c2c;      --bad-soft:#fdf0f0;
+    --good:#1f6b46;     --good-soft:#edf6f1;
+  }
+
+  *{ box-sizing:border-box; }
+  html{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  body{
+    font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif;
+    font-size:10.2pt; line-height:1.5; color:var(--body);
+    margin:0; padding:0;
+  }
+  code, .mono{ font-family:"Cascadia Mono",Consolas,"Courier New",monospace; }
+
+  /* ---------- cover ---------- */
+  .cover{ padding-top:26mm; page-break-after:always; }
+  .cover .eyebrow{
+    font-size:8.5pt; letter-spacing:.16em; text-transform:uppercase;
+    color:var(--accent); font-weight:600; margin-bottom:10px;
+  }
+  .cover h1{
+    font-size:31pt; line-height:1.1; color:var(--ink);
+    margin:0 0 14px; font-weight:600; letter-spacing:-.015em;
+  }
+  .cover .sub{ font-size:12.5pt; color:var(--muted); margin:0 0 34px; }
+  .cover .rule{ height:3px; width:64px; background:var(--accent); margin-bottom:34px; }
+  .meta{ border-top:1px solid var(--rule); padding-top:14px; font-size:9.2pt; color:var(--muted); }
+  .meta div{ margin-bottom:4px; }
+  .meta b{ color:var(--body); font-weight:600; display:inline-block; min-width:104px; }
+
+  .cover .callout{
+    margin-top:30mm; background:var(--warn-soft); border-left:4px solid #c8922a;
+    padding:14px 16px; border-radius:0 4px 4px 0;
+  }
+  .cover .callout h4{ margin:0 0 5px; font-size:10.5pt; color:var(--warn); }
+  .cover .callout p{ margin:0; font-size:9.6pt; }
+
+  /* ---------- structure ---------- */
+  h2{
+    font-size:15pt; color:var(--ink); font-weight:600; letter-spacing:-.01em;
+    margin:0 0 3px; padding-top:2px;
+  }
+  .h2rule{ height:2px; background:var(--accent); width:38px; margin:0 0 16px; }
+  h3{ font-size:11pt; color:var(--ink); font-weight:600; margin:20px 0 7px; }
+  p{ margin:0 0 9px; }
+  .lead{ color:var(--muted); font-size:10.5pt; margin:-6px 0 18px; }
+  section{ page-break-before:always; }
+  section.first{ page-break-before:auto; }
+
+  /* ---------- pipeline diagram ---------- */
+  .flow{ margin:6px 0 4px; }
+  .stage{
+    display:flex; align-items:stretch; gap:0;
+    border:1px solid var(--rule); border-radius:5px; overflow:hidden;
+    margin-bottom:0; background:#fff; page-break-inside:avoid;
+  }
+  .stage .num{
+    flex:0 0 40px; background:var(--accent); color:#fff;
+    display:flex; align-items:center; justify-content:center;
+    font-size:14pt; font-weight:600;
+  }
+  .stage .cmd{
+    flex:0 0 178px; background:var(--accent-soft); padding:9px 11px;
+    border-right:1px solid var(--rule); display:flex; flex-direction:column; justify-content:center;
+  }
+  .stage .cmd code{ font-size:9.6pt; color:var(--accent); font-weight:600; }
+  .stage .cmd .who{ font-size:7.6pt; text-transform:uppercase; letter-spacing:.09em; color:var(--muted); margin-top:3px; }
+  .stage .what{ padding:9px 12px; font-size:9.4pt; }
+  .stage .what b{ color:var(--ink); }
+  .stage.manual .num{ background:#6b7480; }
+  .stage.manual .cmd{ background:var(--soft); }
+  .stage.manual .cmd code{ color:var(--body); }
+  .arrow{ text-align:center; color:#b9c0c8; font-size:12pt; line-height:1; margin:3px 0; }
+
+  .io{
+    background:var(--soft); border:1px solid var(--rule); border-radius:5px;
+    padding:11px 13px; margin:0 0 4px; font-size:9.3pt;
+  }
+  .io .lbl{ font-size:7.8pt; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); margin-bottom:6px; }
+  .io ul{ margin:0; padding-left:15px; }
+  .io li{ margin-bottom:2px; }
+
+  /* ---------- tables ---------- */
+  table{ width:100%; border-collapse:collapse; margin:8px 0 14px; font-size:9.3pt; }
+  th{
+    text-align:left; background:var(--soft); color:var(--ink); font-weight:600;
+    padding:7px 9px; border-bottom:2px solid var(--rule); font-size:8.6pt;
+    text-transform:uppercase; letter-spacing:.05em;
+  }
+  td{ padding:6px 9px; border-bottom:1px solid var(--rule); vertical-align:top; }
+  td.num, th.num{ text-align:right; font-variant-numeric:tabular-nums; }
+  tr:last-child td{ border-bottom:none; }
+  .ok{ color:var(--good); font-weight:600; }
+  .no{ color:var(--bad); font-weight:600; }
+
+  /* ---------- boxes ---------- */
+  .box{ border-radius:0 4px 4px 0; padding:11px 14px; margin:12px 0; font-size:9.5pt; page-break-inside:avoid; }
+  .box p:last-child{ margin-bottom:0; }
+  .box h4{ margin:0 0 5px; font-size:9.8pt; }
+  .box.warn{ background:var(--warn-soft); border-left:4px solid #c8922a; }
+  .box.warn h4{ color:var(--warn); }
+  .box.bad{ background:var(--bad-soft); border-left:4px solid #c05353; }
+  .box.bad h4{ color:var(--bad); }
+  .box.good{ background:var(--good-soft); border-left:4px solid #3f9d72; }
+  .box.good h4{ color:var(--good); }
+  .box.info{ background:var(--accent-soft); border-left:4px solid var(--accent); }
+  .box.info h4{ color:var(--accent); }
+
+  /* ---------- steps ---------- */
+  .step{ display:flex; gap:13px; margin-bottom:15px; page-break-inside:avoid; }
+  .step .n{
+    flex:0 0 26px; height:26px; border-radius:50%; background:var(--accent); color:#fff;
+    display:flex; align-items:center; justify-content:center; font-weight:600; font-size:10pt;
+  }
+  .step.wait .n{ background:#6b7480; }
+  .step .b{ flex:1; padding-top:2px; }
+  .step .t{ font-weight:600; color:var(--ink); font-size:10.4pt; margin-bottom:3px; }
+  .step p{ margin:0 0 5px; font-size:9.5pt; }
+  pre{
+    background:#1e2530; color:#e8edf4; padding:8px 11px; border-radius:4px;
+    font-size:9.2pt; margin:6px 0; overflow-x:auto; line-height:1.45;
+  }
+  pre .c{ color:#8fa6bd; }
+  .expect{ font-size:9pt; color:var(--muted); }
+  .expect b{ color:var(--good); }
+
+  .pathbox{
+    font-family:"Cascadia Mono",Consolas,monospace; font-size:9pt;
+    background:var(--soft); border:1px solid var(--rule); border-radius:4px;
+    padding:7px 10px; margin:6px 0;
+  }
+  ul.tight{ margin:4px 0 9px; padding-left:17px; }
+  ul.tight li{ margin-bottom:3px; }
+  .footer{ margin-top:22px; border-top:1px solid var(--rule); padding-top:9px; font-size:8.4pt; color:var(--muted); }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<div class="cover">
+  <div class="eyebrow">Corgi ETF Trust</div>
+  <h1>N-PORT Filing<br>Pipeline &amp; Runbook</h1>
+  <div class="rule"></div>
+  <p class="sub">How the tool works, what the audit found,<br>and what to do next — step by step.</p>
+
+  <div class="meta">
+    <div><b>Period</b> 2026-06 (quarter ending 30 June 2026)</div>
+    <div><b>Funds</b> 105 in custodian · 104 building · 1 cash-only</div>
+    <div><b>Status</b> All output marked TEST — nothing filed</div>
+    <div><b>Branch</b> humanreview-live-gate</div>
+    <div><b>Prepared</b> 30 July 2026</div>
+  </div>
+
+  <div class="callout">
+    <h4>Before you start</h4>
+    <p>Both source extracts stop on <b>24 June</b>, but the filing covers through <b>30 June</b>.
+    Nothing downstream can be trusted until they are re-pulled. That is Step&nbsp;1.</p>
+  </div>
+</div>
+
+<!-- ============ 1. PIPELINE ============ -->
+<section class="first">
+  <h2>1 · How the pipeline works</h2><div class="h2rule"></div>
+  <p class="lead">Three files in, one XML per fund out. Four commands, plus one trip to a Bloomberg terminal.</p>
+
+  <div class="io">
+    <div class="lbl">You supply</div>
+    <ul>
+      <li><b>Custodian file</b> — every position, all funds (US Bank) → <span class="mono">data/custodian/</span></li>
+      <li><b>AP order book</b> — every create / redeem order → <span class="mono">data/orders/</span></li>
+      <li><b>EagleSTAR export</b> — the accountant's daily snapshots → <span class="mono">data/fund_accounting/</span></li>
+    </ul>
+  </div>
+
+  <div class="arrow">▼</div>
+
+  <div class="flow">
+    <div class="stage">
+      <div class="num">1</div>
+      <div class="cmd"><code>nport masters</code><div class="who">Command</div></div>
+      <div class="what">Reads all three inputs and builds <b>two Excel workbooks</b> covering every fund at once —
+      one for holdings, one for fund-level numbers. Also writes the <b>provenance</b> and
+      <b>reconciliation</b> reports.</div>
+    </div>
+    <div class="arrow">▼</div>
+
+    <div class="stage manual">
+      <div class="num">2</div>
+      <div class="cmd"><code>Bloomberg terminal</code><div class="who">Manual</div></div>
+      <div class="what">Open both workbooks, let the <span class="mono">=BDP()</span> formulas calculate,
+      save as <span class="mono">.xlsx</span>. This fills company IDs, country, returns and bond durations.</div>
+    </div>
+    <div class="arrow">▼</div>
+
+    <div class="stage">
+      <div class="num">3</div>
+      <div class="cmd"><code>nport mergehumanreview</code><div class="who">Command ×2</div></div>
+      <div class="what">Lists whatever has no feed in a review spreadsheet. You fill the blanks;
+      running it again folds your answers back in, tagged as <b>human-reviewed</b>.</div>
+    </div>
+    <div class="arrow">▼</div>
+
+    <div class="stage">
+      <div class="num">4</div>
+      <div class="cmd"><code>nport split</code><div class="who">Command</div></div>
+      <div class="what">Pure copying. Chops the workbooks into per-fund files. No decisions made here —
+      which is why you <b>edit the workbook, never the fund files</b>.</div>
+    </div>
+    <div class="arrow">▼</div>
+
+    <div class="stage">
+      <div class="num">5</div>
+      <div class="cmd"><code>nport build</code><div class="who">Command</div></div>
+      <div class="what">Sorts each row into a type, validates every required field, checks the LIVE gate,
+      writes the XML and validates it against the SEC schema.</div>
+    </div>
+  </div>
+
+  <div class="arrow">▼</div>
+  <div class="io"><div class="lbl">You get</div>
+    <ul><li><span class="mono">output/&lt;TICKER&gt;_2026-06.xml</span> — one per fund, ready for EDGAR</li></ul>
+  </div>
+
+  <h3>The rule the design follows</h3>
+  <p>Every number has exactly <b>one owner</b>. A second source never writes — it only cross-checks
+  into the reconciliation report. Where nothing has a feed, a human fills it in and it gets tagged.</p>
+
+  <table>
+    <tr><th>What</th><th>Who owns it</th></tr>
+    <tr><td>Positions, share counts</td><td>Custodian</td></tr>
+    <tr><td>Company IDs, country, returns, durations</td><td>Bloomberg</td></tr>
+    <tr><td>Dollars — net assets, gains, flows</td><td>EagleSTAR accounting</td></tr>
+    <tr><td>Anything with no feed</td><td>Human review spreadsheet</td></tr>
+  </table>
+</section>
+
+<!-- ============ 2. AUDIT ============ -->
+<section>
+  <h2>2 · What the audit found</h2><div class="h2rule"></div>
+  <p class="lead">The plumbing is sound. All 104 files pass the SEC schema. The problems are in the data going in.</p>
+
+  <div class="box bad">
+    <h4>The one root cause — stale source data</h4>
+    <p>Both extracts stop on <b>24 June</b>; the period ends <b>30 June</b>. This produced
+    <b>238 warnings across 137 of 152 funds</b>, leaving only 15 clear to file.</p>
+  </div>
+
+  <p>Most of those warnings are harmless. Accounting books a trade when it <i>settles</i>;
+  the order book records it when it is <i>placed</i>. So a trade near a month boundary lands in
+  different months in the two systems. Add up the whole quarter and they match exactly —
+  <b>232 of 304</b> fund/side series tie precisely.</p>
+
+  <div class="box warn">
+    <h4>But 16 funds are genuinely wrong</h4>
+    <p>They had accepted redemptions on <b>24 June</b> that had not settled by the time the
+    accounting snapshot was taken. Accounting is the source for flows, so those filings report
+    <b>zero redemptions</b>. Example: XIWC redeemed <b>$374,892</b> and the file says $0.00.</p>
+  </div>
+
+  <h3>Two code defects — now fixed</h3>
+  <table>
+    <tr><th>Defect</th><th class="num">Before</th><th class="num">After</th></tr>
+    <tr>
+      <td><b>Percentages did not tie to the total.</b> Each holding's % came from the custodian's
+      fund size, but the filing reports the accountant's fund size. Two denominators.</td>
+      <td class="num no">85 / 104</td><td class="num ok">104 / 104</td>
+    </tr>
+    <tr>
+      <td><b>Swaps never said long or short.</b> The field was hardcoded blank even though the
+      direction is decoded from the ticker two lines earlier.</td>
+      <td class="num no">0 / 58</td><td class="num ok">58 / 58</td>
+    </tr>
+  </table>
+  <p style="font-size:9.2pt;color:var(--muted);">Both fixed, tested and pushed. The percentage check
+  is now enforced on every build — a mismatch fails the build instead of shipping quietly.
+  Test suite: <b>656 passing</b>.</p>
+
+  <h3>Smaller items</h3>
+  <table>
+    <tr><th>Item</th><th>Assessment</th></tr>
+    <tr><td>70 option deltas blank across 18 funds</td><td>No feed exists — comes from your risk system</td></tr>
+    <tr><td>GPTZ will not build</td><td>Correct — it holds only a $125k cash seed, nothing to report</td></tr>
+    <tr><td>Monthly returns blank for most funds</td><td>Not a gap — verified against fund inception, 104/104 consistent</td></tr>
+    <tr><td>7 funds show no designated index</td><td>Fill in the review spreadsheet if required</td></tr>
+    <tr><td><span class="mono">OVERVIEW.md</span> is out of date</td><td>Predates the review step and the accounting integration</td></tr>
+  </table>
+</section>
+
+<!-- ============ 3. RUNBOOK ============ -->
+<section>
+  <h2>3 · What to do — step by step</h2><div class="h2rule"></div>
+  <p class="lead">Work down the list. Do not skip Step 3 — everything after it inherits the answer.</p>
+
+  <div class="step wait">
+    <div class="n">1</div><div class="b">
+      <div class="t">Get a new EagleSTAR export through 30 June</div>
+      <p>Ask for it to be re-cut with a 30 June cutoff. Save the zip into:</p>
+      <div class="pathbox">data/fund_accounting/</div>
+    </div>
+  </div>
+
+  <div class="step wait">
+    <div class="n">2</div><div class="b">
+      <div class="t">Get a new AP order book through 30 June</div>
+      <p>Re-export it and save as:</p>
+      <div class="pathbox">data/orders/2026-06_orders.csv</div>
+      <p class="expect">The custodian file is already period-end. Leave it alone.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="n">3</div><div class="b">
+      <div class="t">Check the dates actually moved</div>
+      <pre>nport masters --dry-run</pre>
+      <p class="expect">If either file still stops at 24 June, <b style="color:var(--bad)">stop here</b>.
+      Everything downstream inherits the problem.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="n">4</div><div class="b">
+      <div class="t">Build the workbooks</div>
+      <pre>nport masters</pre>
+      <p class="expect">Look for <b>flows from EagleSTAR TB + EagleSTAR gains/liabilities</b>.
+      If it says <i>no fund accounting</i>, the zip was not found — stop and fix that first.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="n">5</div><div class="b">
+      <div class="t">Read the reconciliation report</div>
+      <div class="pathbox">data/master/reconciliation_2026-06.csv</div>
+      <p>Most warnings should now be gone. Three things to look for:</p>
+      <ul class="tight">
+        <li>Warnings that cancel out across two months → ignore, that is settlement timing</li>
+        <li>A fund with order-book redemptions but zero in accounting → investigate</li>
+        <li><b>FDRS</b> and <b>FDRX</b> → had real $31M / $9.5M gaps unrelated to dates</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="step wait">
+    <div class="n">6</div><div class="b">
+      <div class="t">Go to the Bloomberg machine</div>
+      <p>Open both workbooks, wait for them to finish calculating, then save and close Excel.</p>
+      <div class="pathbox">data/master/security_master.xlsx<br>data/master/filing_master.xlsx</div>
+      <p class="expect">Keep them as <b>.xlsx</b> — do not "save as CSV".</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="n">7</div><div class="b">
+      <div class="t">Create the review spreadsheet</div>
+      <pre>nport mergehumanreview</pre>
+    </div>
+  </div>
+
+  <div class="step wait">
+    <div class="n">8</div><div class="b">
+      <div class="t">Fill in the blanks</div>
+      <div class="pathbox">data/humanreview/2026-06_review.xlsx</div>
+      <p>Mainly the option deltas for the 18 defined-outcome funds. Save and close.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="n">9</div><div class="b">
+      <div class="t">Merge your answers back in</div>
+      <pre>nport mergehumanreview</pre>
+      <p class="expect">Yes — the same command twice. First run creates it, second run absorbs your edits.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="n">10</div><div class="b">
+      <div class="t">Push out to the funds</div>
+      <pre>nport split</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="n">11</div><div class="b">
+      <div class="t">Test the build, then build for real</div>
+      <pre>nport build --dry-run   <span class="c"># writes nothing, just reports problems</span>
+nport build</pre>
+      <p class="expect">Expect <b>Built 104/108</b>. GPTZ failing is correct — it holds only cash.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="n">12</div><div class="b">
+      <div class="t">Check the output</div>
+      <pre>python scripts/verify_output.py</pre>
+      <p class="expect">You want <b>CLEAN 104/104</b>. Then open two or three XMLs in
+      <span class="mono">output/</span> and eyeball the fund name, period and net assets.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="n">13</div><div class="b">
+      <div class="t">Go live</div>
+      <p>Set <span class="mono">liveTestFlag</span> to <span class="mono">LIVE</span> in
+      <span class="mono">filing_master.xlsx</span>, save, then:</p>
+      <pre>nport split
+nport build</pre>
+    </div>
+  </div>
+
+  <div class="step wait">
+    <div class="n">14</div><div class="b">
+      <div class="t">Upload the XMLs to EDGAR</div>
+    </div>
+  </div>
+
+  <div class="box info">
+    <h4>If the build refuses to go LIVE</h4>
+    <p>That is the safety gate doing its job — it blocks any fund whose reconciliation still has an
+    unresolved warning. <b>Do not switch it off.</b> If it blocks nearly everything, the gate needs
+    retuning to ignore the harmless month-shuffle warnings; ask before overriding.</p>
+  </div>
+
+  <div class="box good">
+    <h4>Right now</h4>
+    <p>Do Steps 1 and 2. Nothing else can move until those two files arrive.</p>
+  </div>
+
+  <div class="footer">
+    N-PORT filing pipeline · period 2026-06 · prepared 30 July 2026 ·
+    all figures verified against the working tree at branch <span class="mono">humanreview-live-gate</span>
+  </div>
+</section>
+
+</body>
+</html>
