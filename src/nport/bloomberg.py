@@ -101,11 +101,42 @@ def _lazy_import_blpapi():
 class BloombergSession:
     """Manages a blpapi session to Bloomberg Desktop API."""
 
+    # Per-request wall-clock ceiling. nextEvent(timeout) returns a TIMEOUT event when no
+    # message arrives within the timeout; without a deadline the response loop would spin
+    # forever if the terminal never sends a RESPONSE (service down, security never resolves).
+    _EVENT_TIMEOUT_MS = 5000
+    _REQUEST_DEADLINE_S = 120.0
+
     def __init__(self, host: str = "localhost", port: int = 8194):
         self._blpapi = _lazy_import_blpapi()
         self._host = host
         self._port = port
         self._session = None
+
+    def _drain_response(self, handle):
+        """Pump events until the final RESPONSE, calling ``handle(msg)`` on each message.
+
+        Bounded by ``_REQUEST_DEADLINE_S``: each ``nextEvent`` blocks at most
+        ``_EVENT_TIMEOUT_MS``; a TIMEOUT event past the deadline raises TimeoutError
+        instead of looping forever. PARTIAL_RESPONSE events are processed and the loop
+        continues to the terminal RESPONSE.
+        """
+        import time
+        blpapi = self._blpapi
+        deadline = time.monotonic() + self._REQUEST_DEADLINE_S
+        while True:
+            event = self._session.nextEvent(self._EVENT_TIMEOUT_MS)
+            if event.eventType() == blpapi.Event.TIMEOUT:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(
+                        f"Bloomberg did not respond within {self._REQUEST_DEADLINE_S:.0f}s "
+                        f"({self._host}:{self._port}). Is the terminal/service up?"
+                    )
+                continue
+            for msg in event:
+                handle(msg)
+            if event.eventType() == blpapi.Event.RESPONSE:
+                break
 
     def open(self):
         blpapi = self._blpapi
@@ -139,7 +170,6 @@ class BloombergSession:
 
         Returns {security: {field: value}} mapping.
         """
-        blpapi = self._blpapi
         svc = self._session.getService("//blp/refdata")
         request = svc.createRequest("ReferenceDataRequest")
         for sec in securities:
@@ -150,24 +180,22 @@ class BloombergSession:
         self._session.sendRequest(request)
 
         results: dict[str, dict[str, str]] = {}
-        while True:
-            event = self._session.nextEvent(5000)
-            for msg in event:
-                if msg.hasElement("securityData"):
-                    sec_data = msg.getElement("securityData")
-                    for i in range(sec_data.numValues()):
-                        item = sec_data.getValueAsElement(i)
-                        sec_name = item.getElementAsString("security")
-                        field_data = item.getElement("fieldData")
-                        row = {}
-                        for fld in fields:
-                            if field_data.hasElement(fld):
-                                el = field_data.getElement(fld)
-                                row[fld] = str(el.getValue())
-                        results[sec_name] = row
-            if event.eventType() == blpapi.Event.RESPONSE:
-                break
 
+        def _handle(msg):
+            if msg.hasElement("securityData"):
+                sec_data = msg.getElement("securityData")
+                for i in range(sec_data.numValues()):
+                    item = sec_data.getValueAsElement(i)
+                    sec_name = item.getElementAsString("security")
+                    field_data = item.getElement("fieldData")
+                    row = {}
+                    for fld in fields:
+                        if field_data.hasElement(fld):
+                            el = field_data.getElement(fld)
+                            row[fld] = str(el.getValue())
+                    results[sec_name] = row
+
+        self._drain_response(_handle)
         return results
 
     def search_security(self, query: str) -> str | None:
@@ -175,7 +203,6 @@ class BloombergSession:
 
         Returns the Bloomberg security identifier or None.
         """
-        blpapi = self._blpapi
         if not self._session.openService("//blp/instruments"):
             logger.warning("Could not open //blp/instruments service")
             return None
@@ -187,18 +214,16 @@ class BloombergSession:
 
         self._session.sendRequest(request)
 
-        result = None
-        while True:
-            event = self._session.nextEvent(5000)
-            for msg in event:
-                if msg.hasElement("results"):
-                    results_el = msg.getElement("results")
-                    if results_el.numValues() > 0:
-                        result = results_el.getValueAsElement(0).getElementAsString("security")
-            if event.eventType() == blpapi.Event.RESPONSE:
-                break
+        captured: list[str] = []
 
-        return result
+        def _handle(msg):
+            if msg.hasElement("results"):
+                results_el = msg.getElement("results")
+                if results_el.numValues() > 0:
+                    captured.append(results_el.getValueAsElement(0).getElementAsString("security"))
+
+        self._drain_response(_handle)
+        return captured[-1] if captured else None
 
 
 def _read_minimal_csv(path: Path) -> list[MinimalRow]:

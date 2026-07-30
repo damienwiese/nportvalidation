@@ -188,7 +188,7 @@ Balance-sheet lines (`amtPay*`, `delayDeliv`, etc.) are normally `0` for ETFs an
 
 **Advanced / power-user** (wrapped by `masters`/`split` — use only if you need finer control):
 `build-master`/`split-master` (security workbook only), `build-filing-master`/`split-filing-master`
-(filing workbook only), `generate`, `enrich`, `merge`, `new-filing`, `update-masters`,
+(filing workbook only), `generate`, `enrich`, `merge`, `new-filing`,
 `check-schema`, `schema`. Run `nport <cmd> --help` for flags. First time on a brand-new repo,
 `nport build-master --seed` migrates any existing per-fund CSVs into the workbook.
 

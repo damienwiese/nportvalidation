@@ -52,9 +52,14 @@ _TB_A = {
     "20260630": {"900001": [("REALIZED GAIN ON INVESTMENTS SHORT TERM", 250), ("REALIZED LOSS ON INVESTMENTS SHORT TERM", -90),
                             ("NET UNREAL APPR ON INVESTMENTS", 1500), ("ACCUM NET UNREAL APPR OF INVEST", 99999),
                             ("SUBSCRIPTIONS", 15000), ("REDEMPTIONS", -3000),
-                            ("ACCRUED UNITARY FEE EXPENSE", 50), ("TOTAL LIABILITIES", 50)],
+                            ("ACCRUED UNITARY FEE EXPENSE", 50), ("TOTAL ASSETS", 1000050),
+                            ("TOTAL LIABILITIES", 50), ("NET ASSETS", 1000000),
+                            # NET ASSETS appears again in the capital section (equal by
+                            # construction) — the extractor must take it once, not sum to 2,000,000.
+                            ("NET ASSETS", 1000000)],
                  "900002": [("NET UNREAL DEPR ON INVESTMENTS", -400),
-                            ("INVESTMENT PAYABLE", 120), ("TOTAL LIABILITIES", 120)]},
+                            ("INVESTMENT PAYABLE", 120), ("TOTAL ASSETS", 2000120),
+                            ("TOTAL LIABILITIES", 120), ("NET ASSETS", 2000000)]},
 }
 
 
@@ -194,6 +199,33 @@ def test_filing_values_gains_are_monthend_deltas(fixture, tmp_path):
     # latest-in-month must have picked 0630, not the 0628 decoy
     assert as_of["realized_unreal_monthends"][-1] == "20260630"
 
+def test_derivative_values_no_pval_returns_tuple(tmp_path):
+    """No PVal snapshot must return ({}, None), not a bare {} — the caller unpacks a
+    2-tuple (derivs, date), so a bare dict would crash the whole masters run."""
+    empty = tmp_path / "empty_cache"
+    (empty / "pval").mkdir(parents=True)   # dir exists but holds no CSVs
+    result = eaglestar.derivative_values(empty, "2026-06", ENT)
+    assert result == ({}, None)
+    derivs, snap = result   # must unpack cleanly
+    assert derivs == {} and snap is None
+
+
+def test_filing_values_balance_sheet_from_tb(fixture, tmp_path):
+    """totAssets/totLiabs/netAssets come straight from the trial balance, and the
+    twice-listed NET ASSETS is taken once (not summed)."""
+    cache = tmp_path / "c"
+    eaglestar.extract_to_cache(fixture.zip, cache)
+    vals, _, _ = eaglestar.filing_values(cache, "2026-06", ENT)
+    a = vals["TESTA"]
+    assert a["totAssets"] == "1000050.00"
+    assert a["totLiabs"] == "50.00"
+    assert a["netAssets"] == "1000000.00"   # NOT 2000000 — duplicate not summed
+    # identity holds: totAssets - totLiabs == netAssets
+    assert float(a["totAssets"]) - float(a["totLiabs"]) == float(a["netAssets"])
+    b = vals["TESTB"]
+    assert (b["totAssets"], b["totLiabs"], b["netAssets"]) == ("2000120.00", "120.00", "2000000.00")
+
+
 def test_filing_values_second_fund(fixture, tmp_path):
     cache = tmp_path / "c"
     eaglestar.extract_to_cache(fixture.zip, cache)
@@ -311,17 +343,36 @@ def test_filing_master_fills_gains_and_additive(fixture, tmp_path):
     rows = _write_custodian(tmp_path)
     # with EagleSTAR
     fm = tmp_path / "fm.xlsx"
-    build_filing_master(rows, "2026-06", fm, None, fund_acct=eag.filing)
+    build_filing_master(rows, "2026-06", fm, fund_acct=eag.filing)
     a = next(r for r in read_filing_master(fm) if r["Account"] == "TESTA")
     assert a["netRealizedGainMon1"] == "-40.00"
     assert a["netUnrealizedApprMon3"] == "600.00"
     assert a["amtPayOneYrOther"] == "50.00"
     # without EagleSTAR -> defaults unchanged (additive guarantee)
     fm0 = tmp_path / "fm0.xlsx"
-    build_filing_master(rows, "2026-06", fm0, None, fund_acct=None)
+    build_filing_master(rows, "2026-06", fm0, fund_acct=None)
     a0 = next(r for r in read_filing_master(fm0) if r["Account"] == "TESTA")
     assert a0["netRealizedGainMon1"] == "N/A"
     assert a0["amtPayOneYrOther"] == "0"
+
+
+def test_filing_master_balance_sheet_from_tb_not_custodian(fixture, tmp_path):
+    """With EagleSTAR, the GAAP balance sheet from the trial balance REPLACES the
+    custodian-derived totAssets/totLiabs (which gross up a swap to its notional)."""
+    eag = eaglestar.load(fixture.zip, "2026-06")
+    rows = _write_custodian(tmp_path)   # custodian NetAssets=100000 per row
+    fm = tmp_path / "fm.xlsx"
+    build_filing_master(rows, "2026-06", fm, fund_acct=eag.filing)
+    a = next(r for r in read_filing_master(fm) if r["Account"] == "TESTA")
+    # Authoritative TB values, not the custodian's 100000-derived numbers.
+    assert a["totAssets"] == "1000050.00"
+    assert a["totLiabs"] == "50.00"
+    assert a["netAssets"] == "1000000.00"
+    # without EagleSTAR -> falls back to the custodian-derived balance sheet
+    fm0 = tmp_path / "fm0.xlsx"
+    build_filing_master(rows, "2026-06", fm0, fund_acct=None)
+    a0 = next(r for r in read_filing_master(fm0) if r["Account"] == "TESTA")
+    assert a0["netAssets"] == "100000.00"   # custodian NetAssets, no TB override
 
 
 # ── §7d e2e: EagleSTAR values produce XSD-valid XML ────────────

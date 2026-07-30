@@ -19,6 +19,7 @@ from lxml import etree
 
 from nport.cusip import normalize_cusip
 from nport.data_loader import merge_positions_with_master, validate_after_merge
+from nport.numbers import fnum as _parse_float  # re-exported for callers
 from nport.security_master import SecurityMaster
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,7 @@ class HoldingType(Enum):
     CORPORATE_BOND = "corporate_bond"
     MONEY_MARKET = "money_market"
     CASH = "cash"
+    UNKNOWN = "unknown"   # matched no known shape — surfaced as a loud error, never guessed
 
 
 @dataclass
@@ -80,24 +82,12 @@ class ParsedSwap:
 # ── Constants ─────────────────────────────────────────────────
 
 
-_UNDERLYING_INDEX_MAP = {
-    "SPY": ("S&P 500 Index", "SPX"),
-    "QQQ": ("NASDAQ 100 Index", "NDX"),
-    "IWM": ("Russell 2000 Index", "RTY"),
-    "EEM": ("MSCI Emerging Markets Index", "MXEF"),
-    "EFA": ("MSCI EAFE Index", "MXEA"),
-}
+# Swap counterparties and option underlying index were hardcoded maps here; they are now
+# reviewed reference data in the human-review workbook (seeded from those values in
+# nport.humanreview) and applied at split. See build_swap_entry / build_option_entry.
 
-# Swap counterparty code (the swap ticker's trailing token / SecurityName tag in the
-# custodian) → (legal name, LEI). LEIs verified against the GLEIF registry (all ACTIVE).
-# CS and CLST are both Clear Street.
-_SWAP_COUNTERPARTIES = {
-    "CANT": ("Cantor Fitzgerald & Co.", "5493004J7H4GCPG6OB62"),
-    "CLST": ("Clear Street LLC", "549300KNQS43Y7TO3X67"),
-    "CS": ("Clear Street LLC", "549300KNQS43Y7TO3X67"),
-    "MREX": ("Marex Capital Markets Inc.", "5493006BWPDUCYG6EQ34"),
-}
 # Listed/FLEX options clear through the OCC (the central counterparty), LEI from GLEIF.
+# This is a genuine universal constant (not a per-security guess), so it stays.
 _OCC_NAME = "The Options Clearing Corporation"
 _OCC_LEI = "549300CII6SLYGKNHA04"
 
@@ -108,28 +98,6 @@ _NAME_MAX_LEN = 30  # XSD schema max length for <name>
 _TRAILING_DATE_RE = re.compile(r"\s+\d{2}/\d{2}/\d{4}$")
 
 _NS = {"n": "http://www.sec.gov/edgar/nport"}
-
-# Foreign stock country mapping (from SEC filings + public records)
-FOREIGN_COUNTRY = {
-    # Netherlands
-    "AER": "NL", "ASML": "NL", "NBIS": "NL", "NXP": "NL",
-    "CMBT": "BE",
-    # Israel
-    "CAMT": "IL", "CGNT": "IL", "CHKP": "IL", "CLBT": "IL",
-    "CYBR": "IL", "GLBE": "IL", "INM": "IL", "INMD": "IL",
-    "MNDY": "IL", "RDWR": "IL", "TEVA": "IL", "WIX": "IL",
-    # Cayman Islands
-    "NU": "KY", "XP": "KY", "SE": "KY", "GRAB": "KY",
-    "CANG": "KY", "MNSO": "KY", "ARQQ": "KY", "BTBT": "KY",
-    "BLSH": "KY", "BRSL": "KY", "AMBA": "KY", "AS": "KY",
-    "DDL": "KY",
-    # Bermuda
-    "CCL": "BM",
-    # Other
-    "ASC": "MH", "FLUT": "IE", "RPRX": "GB", "BIRK": "JE",
-    "ALC": "CH", "BTDR": "KY", "CDRO": "LU", "SPOT": "LU",
-    "SHOP": "CA", "WCN": "CA", "TEAM": "AU",
-}
 
 # Security master CSV header sets (camelCase, matching existing files)
 EQUITY_HEADERS = [
@@ -174,7 +142,7 @@ def load_xml_reference(xml_dir: Path) -> dict[str, dict[str, str]]:
     """Extract holding reference data from real N-PORT XML files."""
     ref: dict[str, dict[str, str]] = {}
 
-    for xml_path in xml_dir.glob("*.xml"):
+    for xml_path in sorted(xml_dir.glob("*.xml")):
         tree = etree.parse(str(xml_path))
         for sec in tree.findall(".//n:invstOrSec", _NS):
             cusip = sec.findtext("n:cusip", "", _NS).strip()
@@ -215,36 +183,27 @@ def load_xml_reference(xml_dir: Path) -> dict[str, dict[str, str]]:
 def build_equity_entry(
     ticker: str, name: str, cusip: str, ref: dict[str, dict[str, str]],
 ) -> dict[str, str]:
-    """Build a security master entry for an equity."""
+    """Build a security master entry for an equity.
+
+    Identity (name/title/cusip/ticker) comes from the custodian (the reference XML, when
+    present, only supplies a cleaner name/title). lei/isin/invCountry are Bloomberg-owned
+    (=BDP LEGAL_ENTITY_IDENTIFIER / ID_ISIN / CNTRY_OF_DOMICILE) and left BLANK here — never
+    guessed. There is no hardcoded country map and no US default: a US issuer's country comes
+    from Bloomberg (which returns US); off-terminal a blank surfaces as a gap for human review
+    rather than a silent "US".
+    """
     xml_cusip = cusip if cusip and cusip[0].isdigit() else "N/A"
     hit = ref.get(cusip) or ref.get(f"T:{ticker}") if cusip else ref.get(f"T:{ticker}")
-
-    if hit:
-        return {
-            "name": hit.get("name", name)[:30],
-            "lei": hit.get("lei", "N/A"),
-            "title": hit.get("title", name),
-            "cusip": xml_cusip,
-            "isin": hit.get("isin", ""),
-            "ticker": ticker,
-            "invCountry": hit.get("inv_country", "US"),
-            "assetCat": "EC",
-            "issuerCat": "CORP",
-        }
-
-    if cusip and cusip[0].isalpha():
-        country = FOREIGN_COUNTRY.get(ticker, "US")
-    else:
-        country = "US"
-
+    disp_name = hit["name"] if hit and hit.get("name") else name
+    title = hit["title"] if hit and hit.get("title") else name
     return {
-        "name": name[:30],
-        "lei": "N/A",
-        "title": name,
+        "name": disp_name[:30],
+        "lei": "",
+        "title": title,
         "cusip": xml_cusip,
         "isin": "",
         "ticker": ticker,
-        "invCountry": country,
+        "invCountry": "",
         "assetCat": "EC",
         "issuerCat": "CORP",
     }
@@ -272,11 +231,16 @@ def build_mm_entry(row: CustodianRow) -> dict[str, str]:
 
 
 def build_option_entry(row: CustodianRow) -> dict[str, str]:
-    """Build a security master entry for an option position."""
+    """Build a security master entry for an option position.
+
+    The underlying index (refIndexName/refIndexIdentifier) is reviewed reference data —
+    left BLANK here and filled at split from the human-review workbook (option_index sheet),
+    never from a hardcoded map. The OCC central counterparty is a genuine universal constant
+    (every listed/FLEX option clears through it), so it stays.
+    """
     opt = parse_option_name(row.security_name)
     option_id = _generate_option_id(opt)
     shares = float(row.shares)
-    idx = _UNDERLYING_INDEX_MAP.get(opt.underlying, ("", ""))
     return {
         "name": row.security_name[:30],
         "lei": "N/A",
@@ -297,22 +261,30 @@ def build_option_entry(row: CustodianRow) -> dict[str, str]:
         "expDt": opt.exp_dt,
         "delta": "N/A",   # no feed (FLEX options don't price on Bloomberg) — honest, schema-valid
         "refInstType": "indexBasket",
-        "refIndexName": idx[0],
-        "refIndexIdentifier": idx[1],
+        "refIndexName": "",            # reviewed (option_index sheet) — filled at split
+        "refIndexIdentifier": "",
         "valUSD": row.market_value,
         "pctVal": row.weightings.replace("%", "").strip(),
     }
 
 
 def build_swap_entry(row: CustodianRow) -> dict[str, str]:
-    """Build a security master entry for a swap position."""
+    """Build a security master entry for a swap position.
+
+    Structural identity is custodian-derived (ticker, notional=MarketValue, terminationDt,
+    refCusip, reference issuer). Two groups are reviewed reference data — left BLANK here and
+    filled at split from the human-review workbook, never hardcoded:
+
+    * counterparty name/LEI (counterpartyName/counterpartyLei) — from the swap_counterparties
+      sheet, keyed by the code parsed from the ticker (CANT/CLST/MREX) or SecurityName (CS);
+    * the swap leg economics (recFixedOrFloating/recDesc/pmntFloatingRt*/pmntRateTenor/Unit) —
+      from the swap_legs sheet (these were a hardcoded "Total return / USD-SOFR / 3-month"
+      template applied blindly to every swap; now per-swap and human-confirmable).
+
+    valUSD/pctVal/unrealizedAppr (the MTM) come from EagleSTAR downstream (still blank here).
+    """
     swap = parse_swap_ticker(row.stock_ticker)
-    ref_issuer, name_cp = _parse_swap_security_name(row.security_name)
-    # Counterparty code is in the custodian: the swap ticker's trailing token
-    # (CANT/CLST/MREX), or the SecurityName for the few without it (CS).
-    counterparty = swap.counterparty_abbrev or name_cp
-    cp_name, cp_lei = _SWAP_COUNTERPARTIES.get(counterparty.upper(), (counterparty, "N/A"))
-    pct = row.weightings.replace("%", "").strip()
+    ref_issuer, _ = _parse_swap_security_name(row.security_name)
     return {
         "name": "N/A",
         "lei": "N/A",
@@ -324,30 +296,28 @@ def build_swap_entry(row: CustodianRow) -> dict[str, str]:
         "assetCat": "DE",
         "issuerCat": "OTHER",
         "derivCat": "SWP",
-        "counterpartyName": cp_name,
-        "counterpartyLei": cp_lei,
+        "counterpartyName": "",        # reviewed (swap_counterparties) — filled at split
+        "counterpartyLei": "",
         "swapFlag": "Y",
         "terminationDt": swap.termination_dt,
-        # Notional = reference shares x price = the custodian market value (real, not fabricated).
+        # Notional = reference shares x price = the custodian MarketValue (the contract's
+        # face/reference amount, NOT what the swap is worth). It belongs ONLY in notionalAmt.
         "notionalAmt": row.market_value,
         "swapCurCd": "USD",
-        # MTM unrealized gain has no feed and the XSD forbids N/A here → left blank (honest unset;
-        # the fund administrator must supply it before the swap fund can validate).
+        # MTM (valUSD/pctVal/unrealizedAppr) is EagleSTAR-sourced downstream — blank here.
         "unrealizedAppr": "",
-        "valUSD": row.market_value,
-        "pctVal": pct,
-        # TRS leg structure is deterministic: the fund receives the reference total
-        # return ("Other") and pays a floating USD-SOFR financing leg reset every 3 months.
-        "recFixedOrFloating": "Other",
-        "recDesc": f"Total return of {ref_issuer}",
+        "valUSD": "",
+        "pctVal": "",
+        # Leg economics are reviewed (swap_legs sheet) — filled at split, not hardcoded.
+        "recFixedOrFloating": "",
+        "recDesc": "",
         "pmntFixedOrFloating": "Floating",
-        "pmntFloatingRtIndex": "USD-SOFR",
-        # Financing spread has no custodian feed — from the swap confirm (manual), left blank.
+        "pmntFloatingRtIndex": "",
         "pmntFloatingRtSpread": "",
         "pmntPmntAmt": row.market_value,
         "pmntCurCdLeg": "USD",
-        "pmntRateTenor": "Month",
-        "pmntRateUnit": "3",
+        "pmntRateTenor": "",
+        "pmntRateUnit": "",
         "refInstType": "otherRefInst",
         "refIssuerName": ref_issuer,
         "refIssueTitle": ref_issuer,
@@ -447,116 +417,6 @@ def _sm_entry_key(entry: dict[str, str]) -> str:
     return cusip
 
 
-# ── Incremental security master update ────────────────────────
-
-
-def update_security_master(
-    rows: list[CustodianRow],
-    sm_path: Path,
-    xml_dir: Path,
-) -> tuple[list[dict[str, str]], list[str], dict[str, int]]:
-    """Incrementally update a security master from custodian rows.
-
-    Existing entries matched by key are never modified (preserves
-    counterparty, delta, LEI, swap P&L, etc.). New positions are added
-    with auto-populated fields. Positions no longer in the custodian are
-    removed.
-
-    Returns (updated_entries, headers, stats) where stats has keys
-    ``added``, ``removed``, ``kept``.
-    """
-    # Load XML reference data for auto-populating new equities
-    ref: dict[str, dict[str, str]] = {}
-    if xml_dir.is_dir():
-        ref = load_xml_reference(xml_dir)
-
-    # Read existing security master
-    existing: dict[str, dict[str, str]] = {}  # key → raw CSV row dict
-    headers: list[str] = []
-    if sm_path.is_file():
-        with open(sm_path, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            headers = list(reader.fieldnames or [])
-            for row in reader:
-                key = _sm_entry_key(row)
-                if key:
-                    existing[key] = dict(row)
-
-    # Classify custodian rows and determine expected keys
-    wanted: dict[str, dict[str, str]] = {}  # key → new entry (only used if not in existing)
-    seen_cusips: set[str] = set()
-    has_options = False
-    has_swaps = False
-    has_bonds = False
-
-    for row in rows:
-        ht = classify_holding(row)
-        key = _sm_lookup_key(ht, row)
-        if key is None:
-            continue
-
-        if ht == HoldingType.EQUITY:
-            if row.cusip in seen_cusips:
-                continue
-            seen_cusips.add(row.cusip)
-            if key not in wanted:
-                wanted[key] = build_equity_entry(row.stock_ticker, row.security_name, row.cusip, ref)
-        elif ht == HoldingType.MONEY_MARKET:
-            if key not in wanted:
-                wanted[key] = build_mm_entry(row)
-        elif ht == HoldingType.OPTION:
-            has_options = True
-            if key not in wanted:
-                wanted[key] = build_option_entry(row)
-        elif ht == HoldingType.SWAP:
-            has_swaps = True
-            if key not in wanted:
-                wanted[key] = build_swap_entry(row)
-        elif ht == HoldingType.TREASURY:
-            if key not in wanted:
-                wanted[key] = build_treasury_entry(row)
-        elif ht == HoldingType.CORPORATE_BOND:
-            has_bonds = True
-            if key not in wanted:
-                wanted[key] = build_corporate_bond_entry(row)
-
-    # Determine headers — preserve existing, expand if new types appear
-    if not headers:
-        # No existing file — build from scratch
-        headers = list(EQUITY_HEADERS)
-    if has_options:
-        for h in OPTION_HEADERS:
-            if h not in headers:
-                headers.append(h)
-    if has_swaps:
-        for h in SWAP_HEADERS:
-            if h not in headers:
-                headers.append(h)
-    if has_bonds:
-        for h in DEBT_HEADERS:
-            if h not in headers:
-                headers.append(h)
-
-    # Build result: keep existing entries that are still wanted, add new ones
-    result: list[dict[str, str]] = []
-    stats = {"added": 0, "removed": 0, "kept": 0}
-
-    for key in wanted:
-        if key in existing:
-            result.append(existing[key])
-            stats["kept"] += 1
-        else:
-            result.append(wanted[key])
-            stats["added"] += 1
-
-    # Count removed
-    for key in existing:
-        if key not in wanted:
-            stats["removed"] += 1
-
-    return result, headers, stats
-
-
 def write_security_master(
     entries: list[dict[str, str]], headers: list[str], path: Path,
 ) -> None:
@@ -646,7 +506,12 @@ def classify_holding(row: CustodianRow) -> HoldingType:
         return HoldingType.TREASURY
     if _BOND_NAME_RE.search(row.security_name):
         return HoldingType.CORPORATE_BOND
-    return HoldingType.EQUITY
+    # Residual: a real equity always carries a StockTicker. A row that matched none of the
+    # above AND has no ticker is unclassifiable — return UNKNOWN so it fails loudly rather
+    # than being silently mislabeled an equity.
+    if row.stock_ticker.strip():
+        return HoldingType.EQUITY
+    return HoldingType.UNKNOWN
 
 
 # ── String parsers ────────────────────────────────────────────
@@ -833,10 +698,8 @@ def transform_to_holding_dict(
             "other_desc": "USER DEFINED",
             "other_value": option_id,
         })
-        idx = _UNDERLYING_INDEX_MAP.get(opt.underlying)
-        if idx:
-            d["ref_index_name"] = idx[0]
-            d["ref_index_identifier"] = idx[1]
+        # ref_index_name/identifier are reviewed reference data (option_index sheet), filled
+        # into the security master at split and merged in here — not from a hardcoded map.
 
     elif holding_type == HoldingType.SWAP:
         swap = parse_swap_ticker(row.stock_ticker)
@@ -1146,6 +1009,12 @@ def ingest_account(
         if ht == HoldingType.CASH:
             messages.append(f"Skipped Cash&Other row: ${row.market_value}")
             continue
+        if ht == HoldingType.UNKNOWN:
+            messages.append(
+                f"ERROR: unclassifiable row — ticker={row.stock_ticker!r} "
+                f"cusip={row.cusip!r} name={row.security_name!r} (no known holding shape)"
+            )
+            continue
         try:
             holdings.append(transform_to_holding_dict(row, ht))
         except (ValueError, IndexError) as e:
@@ -1160,6 +1029,20 @@ def ingest_account(
         messages.extend(merge_warnings)
     else:
         messages.append(f"No security_master.csv found in {fund_dir}")
+
+    # A swap's reportable value is its mark-to-market (unrealizedAppr), NOT its notional.
+    # The merge may have filled val_usd from a stale security_master.csv that still carries
+    # the notional; override it here so the build is correct regardless of that column. The
+    # custodian MarketValue (= shares x price = notional) only ever belongs in notional_amt.
+    # pct_val is the MTM as a % of net assets (constant per account in the custodian feed).
+    net_assets = _parse_float(rows[0].net_assets) if rows else 0.0
+    for h in holdings:
+        if h.get("deriv_cat") == "SWP":
+            ua = (h.get("unrealized_appr") or "").strip()
+            h["val_usd"] = ua
+            h["pct_val"] = (
+                f"{_parse_float(ua) / net_assets * 100:.2f}" if ua and net_assets else ""
+            )
 
     # Validate required fields after merge
     merge_errors = validate_after_merge(holdings)

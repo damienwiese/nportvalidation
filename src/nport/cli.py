@@ -10,14 +10,13 @@ from pathlib import Path
 
 from nport import eaglestar
 from nport.builder import NportBuilder
+from nport.numbers import fnum as _fnum
 from nport.config import _HOLDINGS_KEY_MAP, parse_config, parse_filing, parse_holdings
 from nport.custodian import (
     filter_by_account,
     generate_filing_template,
     ingest_account,
     parse_custodian_csv,
-    update_security_master,
-    write_security_master,
 )
 from nport.data_loader import DataLoader, merge_positions_with_master, validate_after_merge, write_canonical_csv, write_split_csv
 from nport.filing_master import (
@@ -68,6 +67,11 @@ def main(argv: list[str] | None = None) -> None:
     ms.add_argument("--fund-accounting", default=None, help="EagleSTAR export .zip/.mbox (default: newest in data/fund_accounting/)")
     ms.add_argument("--no-fund-accounting", action="store_true", help="Skip EagleSTAR fund-accounting pre-fill")
     ms.add_argument("--dry-run", action="store_true", help="Show what would be built")
+
+    mhr = sub.add_parser("mergehumanreview", aliases=["merge-human-review"],
+                         help="STEP 1.5: refresh the human-review workbook, then merge filled values into the masters")
+    mhr.add_argument("pos", nargs="*", help="[period] — defaults to the latest custodian file")
+    mhr.add_argument("--period", default=None, help="Filing period (default: latest custodian file)")
 
     sp = sub.add_parser("split", help="STEP 2: write every per-fund file from BOTH workbooks")
     sp.add_argument("pos", nargs="*", help="[period] — defaults to the latest custodian file")
@@ -128,15 +132,6 @@ def main(argv: list[str] | None = None) -> None:
     pl.add_argument("--list", action="store_true", dest="list_filings", help="List recent filings")
     pl.add_argument("--count", type=int, default=5, help="Number of filings to list (default: 5)")
 
-    um = sub.add_parser("update-masters", help="(advanced/legacy) Update per-fund security_master.csv directly from custodian + reference XMLs")
-    um.add_argument("pos", nargs="*", help="[period] [fund] — period defaults to latest, fund defaults to all")
-    um.add_argument("--custodian", default=None, help="Custodian CSV (default: data/custodian/<period>_holdings.csv)")
-    um.add_argument("--fund-dir", default="data/funds", help="Fund directory (default: data/funds)")
-    um.add_argument("--account", default=None, help="Account ticker to update (default: all accounts)")
-    um.add_argument("--all", action="store_true", dest="all_accounts", help="Update all accounts found in custodian")
-    um.add_argument("--xml-dir", default="data/RealXMLs", help="Directory with reference N-PORT XMLs")
-    um.add_argument("--dry-run", action="store_true", help="Show changes without writing")
-
     bm = sub.add_parser("build-master", aliases=["master-build"], help="(advanced) Build only the security master workbook (`masters` builds both)")
     bm.add_argument("pos", nargs="*", help="[period] [account] — period defaults to latest, account defaults to all")
     bm.add_argument("--custodian", default=None, help="Custodian CSV (default: data/custodian/<period>_holdings.csv)")
@@ -163,7 +158,6 @@ def main(argv: list[str] | None = None) -> None:
     bf.add_argument("--custodian", default=None, help="Custodian CSV (default: data/custodian/<period>_holdings.csv)")
     bf.add_argument("--master", default="data/master/filing_master.xlsx", help="Filing master workbook path")
     bf.add_argument("--period", default=None, help="Filing period (default: latest custodian file)")
-    bf.add_argument("--ap-orders", default=None, help="AP order book CSV → monthly Sales/Redemption flows")
     bf.add_argument("--dry-run", action="store_true", help="Show what would be written")
 
     sf = sub.add_parser("split-filing-master", aliases=["filing-master-split"], help="(advanced) Split only the filing master (`split` does both)")
@@ -190,6 +184,8 @@ def main(argv: list[str] | None = None) -> None:
 
     dispatch = {
         "masters": _masters,
+        "mergehumanreview": _mergehumanreview,
+        "merge-human-review": _mergehumanreview,  # alias
         "split": _split,
         "generate": _generate,
         "validate": _validate,
@@ -200,7 +196,6 @@ def main(argv: list[str] | None = None) -> None:
         "build": _ingest,          # alias
         "schema": _schema,
         "pull": _pull,
-        "update-masters": _update_masters,
         "build-master": _build_master,
         "master-build": _build_master,  # alias
         "split-master": _split_master,
@@ -602,8 +597,9 @@ def _ingest_one(args) -> None:
     # 4. Transform + merge + validate
     enriched, messages = ingest_account(account_rows, fund_dir, args.period)
 
-    # Log messages
-    errors = [m for m in messages if "missing required field" in m]
+    # Log messages. A missing required field OR any "ERROR:"-tagged message (unclassifiable
+    # row, parse failure) is build-blocking — fail loud, never ship a silently-dropped holding.
+    errors = [m for m in messages if "missing required field" in m or m.startswith("ERROR")]
     warnings = [m for m in messages if m not in errors]
     if args.verbose or errors:
         _log_issues(errors, warnings, "INGEST")
@@ -649,6 +645,19 @@ def _ingest_one(args) -> None:
     if input_errors:
         _log_issues(input_errors, [], "INPUT")
         sys.exit(1)
+
+    # 7b. LIVE gate — a LIVE filing must have a clean reconciliation (nothing left that
+    # doesn't add up or needs human review). TEST always builds so the operator can iterate.
+    if filing.live_test_flag != "TEST":
+        gate = _live_gate_reasons(account, args.period)
+        if gate:
+            print(f"ERROR: {account} is blocked from LIVE — unresolved reconciliation/gaps "
+                  f"(filing left as TEST). Resolve and re-run:", file=sys.stderr)
+            for r in gate[:8]:
+                print(f"    {r}", file=sys.stderr)
+            if len(gate) > 8:
+                print(f"    … +{len(gate) - 8} more", file=sys.stderr)
+            sys.exit(1)
 
     # 8. Build XML
     xml_bytes = NportBuilder(config, filing, holdings).to_xml_bytes()
@@ -726,64 +735,6 @@ def _pull(args) -> None:
         print(f"  Written: {output_path} ({len(xml_bytes)} bytes)")
 
 
-def _update_masters(args) -> None:
-    """Incrementally update security masters from custodian CSV."""
-    # 0. Resolve shorthand: `nport masters [period] [fund]`
-    pos_account, pos_period = _split_positionals(getattr(args, "pos", None))
-    args.account = pos_account or args.account
-
-    # 1. Parse custodian CSV (auto-located from period if not given)
-    if args.custodian:
-        custodian = Path(args.custodian)
-        if not custodian.is_file():
-            print(f"ERROR: Custodian CSV not found: {custodian}", file=sys.stderr)
-            sys.exit(1)
-    else:
-        custodian = _resolve_custodian(None, _resolve_period(pos_period or getattr(args, "period", None)))
-    all_rows = parse_custodian_csv(custodian)
-
-    xml_dir = Path(args.xml_dir)
-    fund_dir = Path(args.fund_dir)
-
-    # 2. Determine which accounts to process
-    grouped = filter_by_account(all_rows)
-    if args.account:
-        accounts = [args.account.upper()]
-    elif args.all_accounts:
-        accounts = sorted(grouped.keys())
-    elif (fund_dir / "security_master.csv").is_file() or (fund_dir / "fund_config.txt").is_file():
-        # Single fund dir — infer account from dir name
-        accounts = [fund_dir.name.upper()]
-    else:
-        # Parent directory with no --account → default to all
-        accounts = sorted(grouped.keys())
-
-    # 3. Process each account
-    for account in accounts:
-        account_rows = grouped.get(account, [])
-        if not account_rows:
-            print(f"  {account}: no custodian rows, skipping")
-            continue
-
-        # Resolve fund dir
-        if fund_dir.name.upper() == account:
-            resolved_dir = fund_dir
-        else:
-            resolved_dir = fund_dir / account.lower()
-
-        sm_path = resolved_dir / "security_master.csv"
-
-        entries, headers, stats = update_security_master(account_rows, sm_path, xml_dir)
-
-        label = f"{account}: Added {stats['added']}, removed {stats['removed']}, kept {stats['kept']}"
-
-        if args.dry_run:
-            print(f"  DRY RUN {label}")
-        else:
-            write_security_master(entries, headers, sm_path)
-            print(f"  {label} -> {sm_path}")
-
-
 _SECURITY_MASTER_PATH = Path("data/master/security_master.xlsx")
 _FILING_MASTER_PATH = Path("data/master/filing_master.xlsx")
 
@@ -815,13 +766,7 @@ def _resolve_ap_orders(explicit: str | None, period: str) -> Path | None:
 
 _FUND_ACCOUNTING_DIR = Path("data/fund_accounting")
 _MASTER_DIR = Path("data/master")
-
-
-def _fnum(x) -> float:
-    try:
-        return float(str(x).replace(",", "").strip())
-    except (TypeError, ValueError):
-        return 0.0
+_HUMANREVIEW_DIR = Path("data/humanreview")
 
 
 def _write_provenance_and_reconciliation(period, custodian_rows, ap_orders, eag) -> None:
@@ -879,14 +824,15 @@ def _write_provenance_and_reconciliation(period, custodian_rows, ap_orders, eag)
         for acct in sorted(set(ap_flows) | set(eag.flows)):
             for mon in ("mon1", "mon2", "mon3"):
                 for side in ("Sales", "Redemption"):
-                    a = _fnum(ap_flows.get(acct, {}).get(f"{mon}{side}"))
-                    b = _fnum(eag.flows.get(acct, {}).get(f"{mon}{side}"))
+                    # EagleSTAR TB is the WRITER (source_a); the AP order book is the x-check.
+                    a = _fnum(eag.flows.get(acct, {}).get(f"{mon}{side}"))
+                    b = _fnum(ap_flows.get(acct, {}).get(f"{mon}{side}"))
                     diff = a - b
                     flag = "REVIEW" if abs(diff) > max(1.0, 0.05 * max(abs(a), abs(b))) else ""
                     if flag:
                         flags["flows"] += 1
-                    w.writerow([f"flow:{mon}{side}", acct, "AP_orders", f"{a:.2f}",
-                                f"TB@{tb_as_of}", f"{b:.2f}", f"{diff:.2f}", flag])
+                    w.writerow([f"flow:{mon}{side}", acct, f"TB@{tb_as_of}", f"{a:.2f}",
+                                "AP_orders", f"{b:.2f}", f"{diff:.2f}", flag])
 
         # liabilities: mapped amtPayOneYrOther vs TB TOTAL LIABILITIES.
         for ticker, total in sorted(eag.tb_total_liabs.items()):
@@ -920,6 +866,28 @@ def _write_provenance_and_reconciliation(period, custodian_rows, ap_orders, eag)
               f"include the {pval_as_of} vs period-end as-of difference)")
     else:
         print("      reconciliation clean.")
+
+
+def _live_gate_reasons(account: str, period: str) -> list[str]:
+    """Reasons this fund must NOT go LIVE: any unresolved reconciliation REVIEW flag for it,
+    or a missing reconciliation report (so LIVE can't be verified). Empty list = clear to file.
+
+    The reconciliation report (written by `nport masters`) is the machine record of whether
+    everything adds up and traces — the LIVE gate refuses until it's clean for this fund.
+    """
+    recon = _MASTER_DIR / f"reconciliation_{period}.csv"
+    if not recon.is_file():
+        return [f"no reconciliation report ({recon.name}) — run `nport masters` so a LIVE "
+                f"filing can be verified to add up"]
+    reasons: list[str] = []
+    with open(recon, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            if (row.get("fund", "").upper() == account.upper()
+                    and (row.get("flag") or "").strip() == "REVIEW"):
+                reasons.append(
+                    f"{row.get('check')}: {row.get('source_a')}={row.get('value_a')} "
+                    f"vs {row.get('source_b')}={row.get('value_b')} (diff {row.get('diff')})")
+    return reasons
 
 
 def _resolve_fund_accounting(explicit: str | None) -> Path | None:
@@ -974,12 +942,12 @@ def _masters(args) -> None:
           f"kept {stats['kept']}, {stats['formulas']} Bloomberg formulas -> {_SECURITY_MASTER_PATH}")
 
     try:
-        n = build_filing_master_from_custodian(custodian, period, _FILING_MASTER_PATH, ap_orders,
+        n = build_filing_master_from_custodian(custodian, period, _FILING_MASTER_PATH,
                                                fund_acct=eag.filing if eag else None)
     except PermissionError:
         print(f"ERROR: can't write {_FILING_MASTER_PATH} — close it in Excel and retry.", file=sys.stderr)
         sys.exit(1)
-    flow_note = f"flows from {ap_orders.name}" if ap_orders else "no AP orders file — flows left 0"
+    flow_note = ("flows from EagleSTAR TB" if eag else "no fund accounting — flows left N/A")
     eag_note = " + EagleSTAR gains/liabilities" if eag else ""
     print(f"  [2/2] filing master: {n} funds ({flow_note}{eag_note}) -> {_FILING_MASTER_PATH}")
 
@@ -991,7 +959,11 @@ def _masters(args) -> None:
 
 
 def _split(args) -> None:
-    """STEP 2: write every per-fund file from BOTH master workbooks."""
+    """STEP 2: write every per-fund file from BOTH master workbooks (pure projection).
+
+    Human-reviewed reference data is merged into the masters first by `nport mergehumanreview`,
+    so split is a straight projection of the (merged) masters.
+    """
     _, pos_period = _split_positionals(getattr(args, "pos", None))
     period = _resolve_period(pos_period or getattr(args, "period", None))
     fund_dir = _DEFAULT_FUNDS_DIR
@@ -1024,6 +996,57 @@ def _split(args) -> None:
         sys.exit(1)
     if not args.dry_run:
         print("\n  Next: `nport build` (all funds) or `nport build <fund>` to generate the XML.")
+
+
+def _mergehumanreview(args) -> None:
+    """Refresh the human-review workbook from the populated masters, then merge the reviewed
+    values back INTO the masters (between Bloomberg population and split).
+
+    Run it once to generate/refresh `data/humanreview/<period>_review.xlsx` (it surfaces the
+    residual gaps custodian+Bloomberg+EagleSTAR couldn't fill, seeded with the reviewed
+    reference tables). Fill the blanks, run it again to merge them into the master workbooks.
+    Then `nport split`. Merging freezes the Bloomberg-populated cells to literal values, so
+    re-run `nport masters` if you ever need live =BDP formulas again.
+    """
+    from nport import humanreview
+    from nport.filing_master import merge_review_into_filing_master
+    from nport.master_sheet import merge_review_into_master, read_master_xlsx
+
+    _, pos_period = _split_positionals(getattr(args, "pos", None))
+    period = _resolve_period(pos_period or getattr(args, "period", None))
+    review_path = _HUMANREVIEW_DIR / f"{period}_review.xlsx"
+
+    if not _SECURITY_MASTER_PATH.is_file():
+        print(f"ERROR: {_SECURITY_MASTER_PATH} not found — run `nport masters` first.", file=sys.stderr)
+        sys.exit(1)
+
+    # 1. Refresh the review workbook from the (Bloomberg-populated) master — surfaces current
+    #    residual gaps, preserves anything already filled, seeds the reviewed reference tables.
+    master_rows, _ = read_master_xlsx(_SECURITY_MASTER_PATH)
+    generated = humanreview.generate_from_master_rows(master_rows)
+    try:
+        gaps = humanreview.build_review_workbook(review_path, generated)
+    except PermissionError:
+        print(f"ERROR: can't write {review_path} — close it in Excel and retry.", file=sys.stderr)
+        sys.exit(1)
+    review = humanreview.read_review(review_path)
+
+    # 2. Merge the reviewed values into the masters (frozen to literals).
+    try:
+        sm_gaps = merge_review_into_master(_SECURITY_MASTER_PATH, review)
+        na_idx = merge_review_into_filing_master(_FILING_MASTER_PATH, review) \
+            if _FILING_MASTER_PATH.is_file() else 0
+    except PermissionError as e:
+        print(f"ERROR: can't write a master workbook — close it in Excel and retry ({e.filename}).", file=sys.stderr)
+        sys.exit(1)
+
+    blocking = gaps.get("invCountry", 0)
+    print(f"  Merged human review ({review_path.name}) into the masters.")
+    print(f"    swap/option reference still unfilled: {sm_gaps}; invCountry gaps: {blocking}; "
+          f"funds with N/A designated index: {na_idx}")
+    if blocking or sm_gaps:
+        print(f"    -> fill the blanks in {review_path}, then run `nport mergehumanreview` again.")
+    print("  Next: `nport split`.")
 
 
 def _build_master(args) -> None:
@@ -1122,21 +1145,19 @@ def _build_filing_master(args) -> None:
     if not custodian.is_file():
         print(f"ERROR: Custodian CSV not found: {custodian}", file=sys.stderr)
         sys.exit(1)
-    ap_orders = Path(args.ap_orders) if getattr(args, "ap_orders", None) else None
-    if ap_orders and not ap_orders.is_file():
-        print(f"ERROR: AP order book CSV not found: {ap_orders}", file=sys.stderr)
-        sys.exit(1)
     if args.dry_run:
-        flows_note = f", flows from {ap_orders}" if ap_orders else ""
-        print(f"  DRY RUN build-filing-master {period}: from {custodian}{flows_note} -> {master_path}")
+        print(f"  DRY RUN build-filing-master {period}: from {custodian} -> {master_path}")
         return
     try:
-        n = build_filing_master_from_custodian(custodian, period, master_path, ap_orders)
+        # Standalone skeleton (custodian + Bloomberg return formulas only). Dollar values —
+        # balance sheet, gains, flows — come from EagleSTAR via the primary `masters` path.
+        n = build_filing_master_from_custodian(custodian, period, master_path)
     except PermissionError:
         print(f"ERROR: can't write {master_path} — close it in Excel and retry.", file=sys.stderr)
         sys.exit(1)
     print(f"  Built filing master for {n} funds ({period}) -> {master_path}")
     print("  Open it on a Bloomberg terminal so rtn1-3 calculate, save, then `nport split-filing-master`.")
+    print("  (For EagleSTAR balance sheet / gains / flows, use `nport masters` instead.)")
 
 
 def _split_filing_master(args) -> None:
@@ -1231,6 +1252,13 @@ STEP 1 — Build the two master workbooks
   durations. Counterparties + LEIs on swaps/options are filled automatically.
   Only truly manual cells: option `delta`, swap `notionalAmt`/`unrealizedAppr`,
   and fund-accounting gains — type those into the workbooks before saving.
+
+STEP 1.5 — Merge the human review (after Bloomberg populates the workbooks)
+  $ nport mergehumanreview
+  Refreshes data/humanreview/<period>_review.xlsx with the residual gaps that custodian +
+  Bloomberg + EagleSTAR could NOT fill (plus the reviewed reference tables: swap
+  counterparties, swap legs, option/designated index). Fill the blanks in that workbook,
+  run `nport mergehumanreview` again to merge them into the master workbooks, then split.
 
 STEP 2 — Split the workbooks into per-fund files
   $ nport split

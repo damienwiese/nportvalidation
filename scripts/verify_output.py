@@ -180,20 +180,38 @@ def verify_file(path: Path, validator: NportValidator) -> tuple[list, list, int]
         except (AttributeError, TypeError, ValueError):
             return None
     ta, tl, na = num(".//n:totAssets"), num(".//n:totLiabs"), num(".//n:netAssets")
+    # A missing/non-numeric balance-sheet total is an ERROR, not a silent skip — otherwise
+    # a filing with no totAssets would pass the NAV identity by default ("looks good").
+    for label, val in (("totAssets", ta), ("totLiabs", tl), ("netAssets", na)):
+        if val is None:
+            errs.append(f"missing or non-numeric <{label}>")
     if None not in (ta, tl, na) and abs(na - (ta - tl)) > 0.05:
         errs.append(f"NAV identity: netAssets {na} != totAssets {ta} - totLiabs {tl}")
     holdings = root.findall(".//n:invstOrSec", ns)
     if not holdings:
         warns.append("no holdings (invstOrSec) in filing")
     pcts = []
+    missing_country = 0
     for h in holdings:
         p = h.find("n:pctVal", ns)
         if p is not None and p.text and _is_num(p.text):
             pcts.append(float(p.text))
+        # Every holding must carry a real 2-letter invCountry — never silently blank/"US".
+        c = h.find("n:invCountry", ns)
+        ctext = (c.text or "").strip() if c is not None else ""
+        if ctext != _NA and not _COUNTRY.match(ctext):
+            missing_country += 1
+    if missing_country:
+        errs.append(f"{missing_country} holding(s) with missing/invalid invCountry "
+                    "(must be Bloomberg-sourced or human-reviewed, never blank)")
     if pcts:
         tot = sum(pcts)
-        if not (90 <= tot <= 110):
-            warns.append(f"sum(pctVal) = {tot:.1f}% (expected ~100)")
+        # Investments can't exceed net assets by a wide margin: a sum well over 100% is the
+        # classic swap-at-notional overstatement (a 2x swap fund showed ~200%) — now an ERROR.
+        # The low side is NOT flagged — a swap/leveraged fund legitimately holds most of its
+        # net assets as cash/receivables (outside Part C), so its invested % is well below 100.
+        if tot > 105:
+            errs.append(f"sum(pctVal) = {tot:.1f}% (>100% — notional/leverage overstatement)")
     return errs, warns, nlines
 
 

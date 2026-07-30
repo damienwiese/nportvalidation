@@ -301,10 +301,11 @@ def test_seed_then_split_reproduces_per_fund(tmp_path):
     _, buf_rows = _read_csv(out / "buf" / "security_master.csv")
     assert buf_rows[0]["delta"] == "0.72"
     assert buf_rows[0]["counterpartyName"] == "The Options Clearing Corporation"
-    # Equity Bloomberg fields are unresolved off-terminal: lei/invCountry read
-    # back as the schema-valid default (N/A / US), isin (no default) stays empty.
+    # Equity Bloomberg fields are unresolved off-terminal: only lei reads back as the
+    # schema-valid default (N/A). isin AND invCountry have NO default → stay empty (a blank
+    # country is a real gap surfaced for human review, never a silent "US").
     _, fdrs_rows = _read_csv(out / "fdrs" / "security_master.csv")
-    assert all(r["lei"] == "N/A" and r["isin"] == "" and r["invCountry"] == "US" for r in fdrs_rows)
+    assert all(r["lei"] == "N/A" and r["isin"] == "" and r["invCountry"] == "" for r in fdrs_rows)
 
 
 # ── Bloomberg BDP formulas ────────────────────────────────────
@@ -371,9 +372,9 @@ def test_cusip_literal_us_kept_foreign_na(tmp_path):
     aer = next(r for r in back if r["ticker"] == "AER")
     assert amd["cusip"] == "007903107"        # US CUSIP literal
     assert aer["cusip"] == "N/A"              # foreign ordinary -> N/A
-    # lei/country are =BDP formulas; uncalculated (no Bloomberg terminal in the
-    # test) they read back as the schema-valid default — lei "N/A", invCountry "US".
-    assert aer["lei"] == "N/A" and aer["invCountry"] == "US"
+    # lei/country are =BDP formulas; uncalculated (no Bloomberg terminal in the test) lei
+    # reads back as "N/A" but invCountry has no default → "" (a gap for human review).
+    assert aer["lei"] == "N/A" and aer["invCountry"] == ""
 
 
 def test_option_no_spec_treasury_full_govt_set(tmp_path):
@@ -431,14 +432,14 @@ def test_bloomberg_error_junk_is_cleaned_in_seed(tmp_path):
     assert not any(isinstance(c, str) and c.startswith("#")
                    for row in ws.iter_rows(values_only=True) for c in row)
     # isin/lei/invCountry are Bloomberg-owned: they become bare =BDP formulas
-    # (overwriting any provided value). Uncalculated, they read back as the
-    # schema-valid default (lei "N/A", invCountry "US"); isin has no default → "".
+    # (overwriting any provided value). Uncalculated, only lei reads back as the
+    # schema-valid default ("N/A"); isin AND invCountry have no default → "".
     hdr = [c.value for c in ws[1]]
     for f, mnem in (("lei", "LEGAL_ENTITY_IDENTIFIER"), ("isin", "ID_ISIN"),
                     ("invCountry", "CNTRY_OF_DOMICILE")):
         cell = ws.cell(row=2, column=hdr.index(f) + 1).value
         assert cell.startswith("=BDP(") and mnem in cell and "IFERROR" not in cell
-    assert r["lei"] == "N/A" and r["isin"] == "" and r["invCountry"] == "US"
+    assert r["lei"] == "N/A" and r["isin"] == "" and r["invCountry"] == ""
 
 
 def test_reference_cells_are_formulas_general_format(tmp_path):
@@ -594,11 +595,11 @@ def test_corporate_bond_formulas_keyed_corp(tmp_path):
     # assetCat/issuerCat are the locally-known literals.
     assert _formula_cell(ws, hdr, "assetCat") == "DBT"
     assert _formula_cell(ws, hdr, "issuerCat") == "CORP"
-    # Unresolved off-terminal: lei/invCountry read back as the schema-valid
-    # default (N/A / US); maturityDt has no default so it stays empty (a real gap
-    # in a bond's C.9 data must fail validation visibly).
+    # Unresolved off-terminal: only lei reads back as the schema-valid default ("N/A").
+    # maturityDt AND invCountry have no default so they stay empty (real gaps in a bond's
+    # C.9 / country data must surface for human review, never be silently guessed).
     rows, _ = read_master_xlsx(master)
-    assert rows[0]["maturityDt"] == "" and rows[0]["lei"] == "N/A" and rows[0]["invCountry"] == "US"
+    assert rows[0]["maturityDt"] == "" and rows[0]["lei"] == "N/A" and rows[0]["invCountry"] == ""
 
 
 def test_swap_reference_identity_formulas(tmp_path):
@@ -658,7 +659,7 @@ def test_lei_country_default_on_failed_lookup(tmp_path):
     write_master_xlsx([row], IDENTITY_COLUMNS + list(MASTER_ENRICHMENT_COLUMNS), master)
     back, _ = read_master_xlsx(master)
     assert back[0]["lei"] == "N/A"
-    assert back[0]["invCountry"] == "US"
+    assert back[0]["invCountry"] == ""   # no US default — a blank country is a gap
     assert back[0]["isin"] == ""   # no default — blank, so a real gap stays visible
 
 
@@ -669,3 +670,139 @@ def test_spec_selection():
     assert _bbg_spec_key({"assetCat": "DBT", "issuerCat": "CORP"}) == "DBT_CORP"
     assert _bbg_spec_key({"assetCat": "DE", "derivCat": "SWP", "refCusip": "123"}) == "SWP_REF"
     assert _bbg_spec_key({"assetCat": "DE", "derivCat": "OPT"}) is None
+
+
+# ── Human-review overlay (apply_review_to_rows) ───────────────
+
+
+def test_apply_review_fills_swap_counterparty_legs_and_option_index(tmp_path):
+    """The reference data build_*_entry leaves blank is filled from the review workbook:
+    swap counterparty (seeded), swap legs (generated), option underlying index (seeded)."""
+    from nport import humanreview
+    from nport.master_sheet import apply_review_to_rows
+
+    legs = [{"fund": "CMAG", "swapTicker": "02079K305-TRS-05/31/27-L-CANT",
+             "recFixedOrFloating": "Other", "recDesc": "Total return of ALPHABET INC.",
+             "pmntFloatingRtIndex": "USD-SOFR", "pmntFloatingRtSpread": "",
+             "pmntRateTenor": "Month", "pmntRateUnit": "3", "sourceNote": ""}]
+    p = tmp_path / "r.xlsx"
+    humanreview.build_review_workbook(p, {"swap_legs": legs})
+    review = humanreview.read_review(p)
+
+    rows = [
+        {"Account": "CMAG", "derivCat": "SWP", "ticker": "02079K305-TRS-05/31/27-L-CANT",
+         "title": "ALPHABET INC.-SWAP-CANT-L", "counterpartyName": "", "counterpartyLei": "",
+         "recFixedOrFloating": "", "recDesc": "", "pmntFloatingRtIndex": "",
+         "pmntFloatingRtSpread": "", "pmntRateTenor": "", "pmntRateUnit": "",
+         "cusip": "N/A", "invCountry": "US", "isin": ""},
+        {"Account": "CMAY", "derivCat": "OPT", "ticker": "SPY-C143.73-20270430",
+         "title": "SPY 04/30/2027 143.73 C", "refIndexName": "", "refIndexIdentifier": "",
+         "cusip": "N/A", "invCountry": "US", "isin": ""},
+    ]
+    apply_review_to_rows(rows, review)
+    assert rows[0]["counterpartyName"] == "Cantor Fitzgerald & Co."     # CANT, seeded
+    assert rows[0]["counterpartyLei"] == "5493004J7H4GCPG6OB62"
+    assert rows[0]["recDesc"] == "Total return of ALPHABET INC."
+    assert rows[0]["pmntFloatingRtIndex"] == "USD-SOFR"
+    assert rows[1]["refIndexName"] == "S&P 500 Index"                   # SPY, seeded option_index
+    assert rows[1]["refIndexIdentifier"] == "SPX"
+
+
+def test_apply_review_cs_from_name_and_unmapped_is_gap(tmp_path):
+    """Counterparty code parsed from the SecurityName (CS) resolves; an unmapped code stays
+    blank (a gap), never fabricated."""
+    from nport import humanreview
+    from nport.master_sheet import apply_review_to_rows
+
+    p = tmp_path / "r.xlsx"
+    humanreview.build_review_workbook(p, {})           # seeded counterparties incl. CS
+    review = humanreview.read_review(p)
+    rows = [
+        {"Account": "FDRX", "derivCat": "SWP", "ticker": "218946101-TRS-01/19/28-L",
+         "title": "CORGI ETF TR SWAP CS", "counterpartyName": "", "counterpartyLei": ""},
+        {"Account": "ZZ", "derivCat": "SWP", "ticker": "464286400-TRS-12/01/27-L-XYZ",
+         "title": "SOMETHING-SWAP-XYZ-L", "counterpartyName": "", "counterpartyLei": ""},
+    ]
+    apply_review_to_rows(rows, review)
+    assert rows[0]["counterpartyName"] == "Clear Street LLC"            # CS parsed from name
+    assert rows[1]["counterpartyName"] == ""                           # XYZ unmapped → gap
+
+
+def test_merge_review_into_master_fills_and_freezes(tmp_path):
+    """mergehumanreview's core: reviewed swap counterparty/legs + option index get written
+    into the master (and it's frozen to literals so Bloomberg results survive)."""
+    from nport import humanreview
+    from nport.master_sheet import merge_review_into_master, read_master_xlsx
+
+    cust = _write_custodian(tmp_path, [
+        _eq("CMAG", "67066G104", "67066G104", "NVDA-SWAP-CANT-L"),  # placeholder, overwritten below
+    ])
+    # Hand-write a swap + option custodian (the _eq helper is equity-shaped)
+    rows_in = [
+        {"Date": "06/01/2026", "Account": "CMAG", "StockTicker": "054540208-TRS-12/01/27-L-CANT",
+         "CUSIP": "054540208-TRS-12/01/27-L-CANT", "SecurityName": "AXCELIS-SWAP-CANT-L",
+         "Shares": "100", "Price": "10", "MarketValue": "1000", "Weightings": "1.0%",
+         "NetAssets": "100000", "SharesOutstanding": "5000", "CreationUnits": "10", "MoneyMarketFlag": ""},
+        {"Date": "06/01/2026", "Account": "CMAY", "StockTicker": "2SPY  270430C00143730",
+         "CUSIP": "0SPY00270430C00143730", "SecurityName": "SPY 04/30/2027 143.73 C",
+         "Shares": "100", "Price": "5", "MarketValue": "500", "Weightings": "1.0%",
+         "NetAssets": "100000", "SharesOutstanding": "5000", "CreationUnits": "10", "MoneyMarketFlag": ""},
+    ]
+    cust = _write_custodian(tmp_path, rows_in)
+    master = tmp_path / "m.xlsx"
+    refresh_master(parse_custodian_csv(cust), master, formulas=False)
+
+    rows, _ = read_master_xlsx(master)
+    swap = next(r for r in rows if r["derivCat"] == "SWP")
+    assert swap["counterpartyName"] == ""        # build leaves it blank (reviewed)
+
+    generated = humanreview.generate_from_master_rows(rows)
+    humanreview.build_review_workbook(tmp_path / "r.xlsx", generated)
+    review = humanreview.read_review(tmp_path / "r.xlsx")
+    merge_review_into_master(master, review)
+
+    rows2, _ = read_master_xlsx(master)
+    swap2 = next(r for r in rows2 if r["derivCat"] == "SWP")
+    opt2 = next(r for r in rows2 if r["derivCat"] == "OPT")
+    assert swap2["counterpartyName"] == "Cantor Fitzgerald & Co."   # CANT, seeded
+    assert swap2["recDesc"].startswith("Total return of")           # swap_legs
+    assert swap2["pmntFloatingRtIndex"] == "USD-SOFR"
+    assert opt2["refIndexName"] == "S&P 500 Index"                  # SPY, seeded
+
+
+def test_golden_merge_then_split_propagates_review_to_per_fund(tmp_path):
+    """End-to-end of the new flow: refresh_master -> mergehumanreview -> split. The reviewed
+    swap counterparty/legs and option index must land in the per-fund security_master.csv
+    (the artifact `build` consumes)."""
+    from nport import humanreview
+    from nport.master_sheet import merge_review_into_master
+
+    rows_in = [
+        _eq("CMAG", "67066G104", "67066G104", "NVIDIA Corp"),                # equity
+        {"Date": "06/01/2026", "Account": "CMAG", "StockTicker": "054540208-TRS-12/01/27-L-CANT",
+         "CUSIP": "054540208-TRS-12/01/27-L-CANT", "SecurityName": "AXCELIS-SWAP-CANT-L",
+         "Shares": "100", "Price": "10", "MarketValue": "1000", "Weightings": "1.0%",
+         "NetAssets": "100000", "SharesOutstanding": "5000", "CreationUnits": "10", "MoneyMarketFlag": ""},
+        {"Date": "06/01/2026", "Account": "CMAG", "StockTicker": "2SPY  270430C00143730",
+         "CUSIP": "0SPY00270430C00143730", "SecurityName": "SPY 04/30/2027 143.73 C",
+         "Shares": "100", "Price": "5", "MarketValue": "500", "Weightings": "1.0%",
+         "NetAssets": "100000", "SharesOutstanding": "5000", "CreationUnits": "10", "MoneyMarketFlag": ""},
+    ]
+    cust = _write_custodian(tmp_path, rows_in)
+    master = tmp_path / "m.xlsx"
+    refresh_master(parse_custodian_csv(cust), master, formulas=False)
+
+    mrows, _ = read_master_xlsx(master)
+    review_path = tmp_path / "r.xlsx"
+    humanreview.build_review_workbook(review_path, humanreview.generate_from_master_rows(mrows))
+    review = humanreview.read_review(review_path)
+    merge_review_into_master(master, review)
+
+    funds = tmp_path / "funds"
+    split_master(master, funds)
+    _, rows = _read_csv(funds / "cmag" / "security_master.csv")
+    swap = next(r for r in rows if r.get("derivCat") == "SWP")
+    opt = next(r for r in rows if r.get("derivCat") == "OPT")
+    assert swap["counterpartyName"] == "Cantor Fitzgerald & Co."
+    assert swap["recDesc"].startswith("Total return of") and swap["pmntFloatingRtIndex"] == "USD-SOFR"
+    assert opt["refIndexName"] == "S&P 500 Index" and opt["refIndexIdentifier"] == "SPX"

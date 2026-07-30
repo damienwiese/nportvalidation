@@ -25,8 +25,6 @@ from nport.custodian import (
     parse_swap_ticker,
     parse_treasury_name,
     transform_to_holding_dict,
-    update_security_master,
-    write_security_master,
 )
 
 
@@ -385,8 +383,10 @@ class TestTransformOption:
         assert d["written_or_pur"] == "Purchased"
         assert d["payoff_profile"] == "Long"
         assert d["ref_inst_type"] == "indexBasket"
-        assert d["ref_index_name"] == "S&P 500 Index"
-        assert d["ref_index_identifier"] == "SPX"
+        # The underlying index is reviewed reference data (option_index sheet), filled at
+        # split from the human-review workbook — NOT a hardcoded map. transform leaves it unset.
+        assert "ref_index_name" not in d
+        assert "ref_index_identifier" not in d
         assert d["other_desc"] == "USER DEFINED"
         assert d["other_value"] == "SPY-C143.73-20270430"
         assert "unrealized_appr" not in d
@@ -584,33 +584,20 @@ class TestBuilderSourcing:
                  security_name="ISHARES MSCI BRAZIL ETF-SWAP-CANT-L",
                  market_value="1157777.68", weightings="3.50%")
         e = build_swap_entry(r)
-        # CANT code → resolved to the legal name + GLEIF LEI.
-        assert e["counterpartyName"] == "Cantor Fitzgerald & Co."
-        assert e["counterpartyLei"] == "5493004J7H4GCPG6OB62"
-        assert e["valUSD"] == "1157777.68"
-        assert e["pctVal"] == "3.50"
         assert e["refCusip"] == "464286400"
-        # notionalAmt = reference shares×price = the custodian market value (real, not fabricated).
+        # The custodian MarketValue for a swap is shares×price = the NOTIONAL. It belongs
+        # ONLY in notionalAmt — NOT in valUSD (that was the overstatement bug that made 2x
+        # swap funds report ~200% of net assets).
         assert e["notionalAmt"] == "1157777.68"
-        # MTM unrealized gain has no feed and XSD forbids N/A here → honest blank.
+        # valUSD/pctVal are the swap's mark-to-market, which has no custodian feed → left
+        # blank here and filled from EagleSTAR unrealizedAppr downstream. NOT the notional.
+        assert e["valUSD"] == ""
+        assert e["pctVal"] == ""
         assert e["unrealizedAppr"] == ""
-
-    def test_swap_counterparty_falls_back_to_name(self):
-        # Ticker has no counterparty token; the SecurityName carries "CS" (= Clear Street).
-        r = _row(stock_ticker="218946101-TRS-01/19/28-L",
-                 security_name="CORGI ETF TR SWAP CS",
-                 market_value="100.00", weightings="0.10%")
-        e = build_swap_entry(r)
-        assert e["counterpartyName"] == "Clear Street LLC"
-        assert e["counterpartyLei"] == "549300KNQS43Y7TO3X67"
-
-    def test_unknown_swap_counterparty_falls_back_to_code(self):
-        # An unmapped code keeps the raw token + N/A LEI (valid, warns) — no fabrication.
-        r = _row(stock_ticker="464286400-TRS-12/01/27-L-XYZ",
-                 security_name="SOMETHING-SWAP-XYZ-L",
-                 market_value="100.00", weightings="0.10%")
-        e = build_swap_entry(r)
-        assert e["counterpartyName"] == "XYZ" and e["counterpartyLei"] == "N/A"
+        # Counterparty + leg economics are reviewed reference data (filled at split from the
+        # human-review workbook) — NOT resolved from a hardcoded map here. Left blank.
+        assert e["counterpartyName"] == "" and e["counterpartyLei"] == ""
+        assert e["recDesc"] == "" and e["pmntFloatingRtIndex"] == ""
 
     def test_option_values_from_custodian_delta_na(self):
         r = _row(security_name="SPY 05/28/2027 151.71 C",
@@ -699,6 +686,40 @@ class TestIngestAccount:
         assert h["inv_country"] == "US"
         assert h["isin"] == "US0090661010"
 
+    def test_swap_val_usd_is_mtm_not_notional(self, tmp_path):
+        """A swap holding's val_usd must be its mark-to-market (unrealizedAppr from the
+        master), NOT the custodian MarketValue (= notional). This is the core fix: a 2x
+        swap fund must not report ~200% of net assets."""
+        fund_dir = tmp_path / "fund"
+        fund_dir.mkdir()
+        sm_path = fund_dir / "security_master.csv"
+        # Master carries the (wrong, legacy) notional in valUSD but the real MTM in
+        # unrealizedAppr — the build must report the MTM regardless of the stale valUSD.
+        sm_path.write_text(
+            "name,lei,title,cusip,isin,ticker,invCountry,assetCat,issuerCat,"
+            "derivCat,counterpartyName,counterpartyLei,swapFlag,terminationDt,"
+            "notionalAmt,swapCurCd,unrealizedAppr,valUSD,pctVal,refInstType,"
+            "refIssuerName,refIssueTitle,refCusip,refIsin,refTicker\n"
+            "N/A,N/A,AXCELIS-SWAP,N/A,,054540208-TRS-12/01/27-L-CANT,US,DE,OTHER,"
+            "SWP,Cantor Fitzgerald & Co.,5493004J7H4GCPG6OB62,Y,2027-12-01,"
+            "485785.16,USD,-6321.11,485785.16,199.21,otherRefInst,"
+            "Axcelis,Axcelis,054540208,,\n"
+        )
+        rows = [_row(
+            stock_ticker="054540208-TRS-12/01/27-L-CANT",
+            security_name="AXCELIS TECHNOLOGIES, INC.-SWAP-CANT-L",
+            cusip="", market_value="485785.16", weightings="199.21%",
+            net_assets="243854.00",
+        )]
+        holdings, _ = ingest_account(rows, fund_dir, "2026-06")
+        h = holdings[0]
+        # val_usd is the MTM, not the 485785.16 notional
+        assert h["val_usd"] == "-6321.11"
+        # pctVal recomputed from the MTM and net assets (-6321.11 / 243854 * 100)
+        assert h["pct_val"] == "-2.59"
+        # notional lives only in notional_amt
+        assert h["notional_amt"] == "485785.16"
+
     def test_no_security_master_warns(self, tmp_path):
         fund_dir = tmp_path / "fund"
         fund_dir.mkdir()
@@ -782,273 +803,6 @@ class TestIngestCLI:
             ])
         captured = capsys.readouterr()
         assert "No rows for account" in captured.err
-
-
-# ── TestUpdateSecurityMaster ─────────────────────────────────
-
-
-class TestUpdateSecurityMaster:
-    """Tests for incremental security master updates."""
-
-    def _make_sm(self, tmp_path, content):
-        """Write a security_master.csv and return its path."""
-        sm_path = tmp_path / "security_master.csv"
-        sm_path.write_text(content)
-        return sm_path
-
-    def test_new_equity_added(self, tmp_path):
-        """New equity position is added to empty security master."""
-        sm_path = tmp_path / "security_master.csv"
-        rows = [_row()]  # ABNB equity
-
-        entries, headers, stats = update_security_master(rows, sm_path, tmp_path)
-
-        assert stats["added"] == 1
-        assert stats["removed"] == 0
-        assert stats["kept"] == 0
-        assert len(entries) == 1
-        assert entries[0]["ticker"] == "ABNB"
-        assert entries[0]["cusip"] == "009066101"
-
-    def test_existing_equity_preserved(self, tmp_path):
-        """Existing equity entry is kept as-is (manual fields preserved)."""
-        sm_path = self._make_sm(tmp_path,
-            "name,lei,title,cusip,isin,ticker,invCountry,assetCat,issuerCat\n"
-            "Airbnb Inc,MANUALLY_SET_LEI,Airbnb Inc,009066101,US0090661010,ABNB,US,EC,CORP\n"
-        )
-        rows = [_row()]  # same ABNB equity
-
-        entries, headers, stats = update_security_master(rows, sm_path, tmp_path)
-
-        assert stats["added"] == 0
-        assert stats["removed"] == 0
-        assert stats["kept"] == 1
-        assert len(entries) == 1
-        # LEI was manually set — must be preserved
-        assert entries[0]["lei"] == "MANUALLY_SET_LEI"
-
-    def test_removed_position_dropped(self, tmp_path):
-        """Position no longer in custodian is removed from security master."""
-        sm_path = self._make_sm(tmp_path,
-            "name,lei,title,cusip,isin,ticker,invCountry,assetCat,issuerCat\n"
-            "Airbnb Inc,549300HMUDNO0RY56D37,Airbnb Inc,009066101,US0090661010,ABNB,US,EC,CORP\n"
-            "Old Stock,N/A,Old Stock Inc,999999999,,OLDX,US,EC,CORP\n"
-        )
-        rows = [_row()]  # only ABNB — OLDX should be removed
-
-        entries, headers, stats = update_security_master(rows, sm_path, tmp_path)
-
-        assert stats["kept"] == 1
-        assert stats["removed"] == 1
-        assert stats["added"] == 0
-        assert len(entries) == 1
-        assert entries[0]["ticker"] == "ABNB"
-
-    def test_mixed_add_keep_remove(self, tmp_path):
-        """Mixed scenario: one kept, one added, one removed."""
-        sm_path = self._make_sm(tmp_path,
-            "name,lei,title,cusip,isin,ticker,invCountry,assetCat,issuerCat\n"
-            "Airbnb Inc,549300HMUDNO0RY56D37,Airbnb Inc,009066101,US0090661010,ABNB,US,EC,CORP\n"
-            "Old Stock,N/A,Old Stock Inc,999999999,,OLDX,US,EC,CORP\n"
-        )
-        rows = [
-            _row(),  # ABNB — kept
-            _row(stock_ticker="MSFT", cusip="594918104", security_name="Microsoft Corp"),  # new
-        ]
-
-        entries, headers, stats = update_security_master(rows, sm_path, tmp_path)
-
-        assert stats["kept"] == 1
-        assert stats["added"] == 1
-        assert stats["removed"] == 1
-        assert len(entries) == 2
-        tickers = {e["ticker"] for e in entries}
-        assert tickers == {"ABNB", "MSFT"}
-
-    def test_option_keyed_by_ticker(self, tmp_path):
-        """Options are matched by generated ticker ID."""
-        sm_path = self._make_sm(tmp_path,
-            "name,lei,title,cusip,isin,ticker,invCountry,assetCat,issuerCat,"
-            "derivCat,counterpartyName,counterpartyLei,putOrCall,writtenOrPur,"
-            "exercisePrice,exercisePriceCurCd,expDt,delta,refInstType,refIndexName,refIndexIdentifier\n"
-            "SPY 04/30/2027 143.73 C,N/A,SPY 04/30/2027 143.73 C,N/A,,SPY-C143.73-20270430,US,DE,CORP,"
-            "OPT,MY COUNTERPARTY,LEI123,Call,Purchased,143.73,USD,2027-04-30,0.65,indexBasket,S&P 500 Index,SPX\n"
-        )
-        rows = [
-            _row(
-                security_name="SPY 04/30/2027 143.73 C",
-                stock_ticker="2SPY  270430C00143730",
-                shares="100.00000000",
-            ),
-        ]
-
-        entries, headers, stats = update_security_master(rows, sm_path, tmp_path)
-
-        assert stats["kept"] == 1
-        assert stats["added"] == 0
-        # Counterparty and delta preserved
-        assert entries[0]["counterpartyName"] == "MY COUNTERPARTY"
-        assert entries[0]["delta"] == "0.65"
-
-    def test_swap_keyed_by_ticker(self, tmp_path):
-        """Swaps are matched by full swap ticker."""
-        sm_path = self._make_sm(tmp_path,
-            "name,lei,title,cusip,isin,ticker,invCountry,assetCat,issuerCat,"
-            "derivCat,counterpartyName,counterpartyLei,swapFlag,terminationDt,"
-            "notionalAmt,swapCurCd,unrealizedAppr,valUSD,pctVal,"
-            "recFixedOrFloating,recDesc,pmntFixedOrFloating,pmntFloatingRtIndex,"
-            "pmntFloatingRtSpread,pmntPmntAmt,pmntCurCdLeg,pmntRateTenor,pmntRateUnit,"
-            "refInstType,refIssuerName,refIssueTitle,refCusip,refIsin,refTicker\n"
-            "N/A,N/A,ALPHABET INC.-SWAP-CANT-L,N/A,,02079K305-TRS-05/31/27-L-CANT,US,DE,OTHER,"
-            "SWP,Cantor Fitzgerald,CANTLEI123,Y,2027-05-31,"
-            "500000,USD,12345,175000,3.50,"
-            ",,,,,,,,,"
-            "otherRefInst,ALPHABET INC.,ALPHABET INC.,02079K305,,\n"
-        )
-        rows = [
-            _row(
-                stock_ticker="02079K305-TRS-05/31/27-L-CANT",
-                security_name="ALPHABET INC.-SWAP-CANT-L",
-                shares="1000.00000000",
-            ),
-        ]
-
-        entries, headers, stats = update_security_master(rows, sm_path, tmp_path)
-
-        assert stats["kept"] == 1
-        # Counterparty, notional, unrealized preserved
-        assert entries[0]["counterpartyName"] == "Cantor Fitzgerald"
-        assert entries[0]["notionalAmt"] == "500000"
-        assert entries[0]["unrealizedAppr"] == "12345"
-
-    def test_cash_rows_skipped(self, tmp_path):
-        """Cash&Other rows are ignored during update."""
-        sm_path = tmp_path / "security_master.csv"
-        rows = [
-            _row(stock_ticker="Cash&Other", security_name="Cash & Other"),
-        ]
-
-        entries, headers, stats = update_security_master(rows, sm_path, tmp_path)
-
-        assert len(entries) == 0
-        assert stats["added"] == 0
-
-    def test_headers_expanded_for_new_options(self, tmp_path):
-        """Headers expand when a fund gains its first option."""
-        sm_path = self._make_sm(tmp_path,
-            "name,lei,title,cusip,isin,ticker,invCountry,assetCat,issuerCat\n"
-            "Airbnb Inc,549300HMUDNO0RY56D37,Airbnb Inc,009066101,US0090661010,ABNB,US,EC,CORP\n"
-        )
-        rows = [
-            _row(),  # equity — kept
-            _row(
-                security_name="SPY 04/30/2027 143.73 C",
-                stock_ticker="2SPY  270430C00143730",
-                shares="100.00000000",
-            ),
-        ]
-
-        entries, headers, stats = update_security_master(rows, sm_path, tmp_path)
-
-        assert "derivCat" in headers
-        assert "counterpartyName" in headers
-        assert "delta" in headers
-
-    def test_write_and_roundtrip(self, tmp_path):
-        """Written CSV can be read back correctly."""
-        sm_path = tmp_path / "security_master.csv"
-        rows = [_row()]
-
-        entries, headers, stats = update_security_master(rows, sm_path, tmp_path)
-        write_security_master(entries, headers, sm_path)
-
-        # Read back
-        entries2, headers2, stats2 = update_security_master(rows, sm_path, tmp_path)
-
-        assert stats2["kept"] == 1
-        assert stats2["added"] == 0
-        assert stats2["removed"] == 0
-
-    def test_money_market_keyed_by_cusip(self, tmp_path):
-        """Money market positions are matched by CUSIP."""
-        sm_path = self._make_sm(tmp_path,
-            "name,lei,title,cusip,isin,ticker,invCountry,assetCat,issuerCat\n"
-            "First Amer Govt Oblg,549300R5MYM6VZF1RM44,First American Government Obligations Fund,31846V336,US31846V3362,FGXXX,US,STIV,RF\n"
-        )
-        rows = [
-            _row(stock_ticker="FGXXX", cusip="31846V336",
-                 security_name="First American Government Obligations Fund 12/01/2031",
-                 money_market_flag="Y"),
-        ]
-
-        entries, headers, stats = update_security_master(rows, sm_path, tmp_path)
-
-        assert stats["kept"] == 1
-        assert stats["added"] == 0
-        # Original name preserved (not overwritten by build_mm_entry)
-        assert entries[0]["name"] == "First Amer Govt Oblg"
-
-
-# ── TestUpdateMastersCLI ─────────────────────────────────────
-
-
-class TestUpdateMastersCLI:
-    def test_dry_run(self, tmp_path, capsys):
-        """CLI --dry-run shows changes without writing."""
-        from nport.cli import main
-
-        csv_path = _write_csv(tmp_path, [_EQUITY_ROW, _MM_ROW])
-
-        fund_dir = tmp_path / "fdrs"
-        fund_dir.mkdir()
-        sm_path = fund_dir / "security_master.csv"
-        sm_path.write_text(
-            "name,lei,title,cusip,isin,ticker,invCountry,assetCat,issuerCat\n"
-            "Airbnb Inc,549300HMUDNO0RY56D37,Airbnb Inc,009066101,US0090661010,ABNB,US,EC,CORP\n"
-        )
-
-        main([
-            "update-masters",
-            "--custodian", str(csv_path),
-            "--fund-dir", str(fund_dir),
-            "--account", "FDRS",
-            "--xml-dir", str(tmp_path),  # empty — no XMLs
-            "--dry-run",
-        ])
-        captured = capsys.readouterr()
-        assert "DRY RUN" in captured.out
-        assert "Added 1" in captured.out  # MM added
-        assert "kept 1" in captured.out   # ABNB kept
-
-    def test_writes_file(self, tmp_path, capsys):
-        """CLI writes updated security master."""
-        from nport.cli import main
-
-        csv_path = _write_csv(tmp_path, [_EQUITY_ROW])
-
-        fund_dir = tmp_path / "fdrs"
-        fund_dir.mkdir()
-        sm_path = fund_dir / "security_master.csv"
-        # Start with ABNB + OLDX; OLDX should be removed
-        sm_path.write_text(
-            "name,lei,title,cusip,isin,ticker,invCountry,assetCat,issuerCat\n"
-            "Airbnb Inc,549300HMUDNO0RY56D37,Airbnb Inc,009066101,US0090661010,ABNB,US,EC,CORP\n"
-            "Old Stock,N/A,Old Stock Inc,999999999,,OLDX,US,EC,CORP\n"
-        )
-
-        main([
-            "update-masters",
-            "--custodian", str(csv_path),
-            "--fund-dir", str(fund_dir),
-            "--account", "FDRS",
-            "--xml-dir", str(tmp_path),
-        ])
-
-        # Verify file was updated
-        with open(sm_path) as f:
-            content = f.read()
-        assert "ABNB" in content
-        assert "OLDX" not in content
 
 
 # ── TestGenerateFilingTemplate ─────────────────────────────────

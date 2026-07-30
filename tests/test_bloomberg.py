@@ -216,6 +216,32 @@ class TestBloombergSession:
             bs.open()
 
     @patch("nport.bloomberg._lazy_import_blpapi")
+    def test_bdp_times_out_instead_of_hanging(self, mock_import, monkeypatch):
+        """If the terminal never sends a RESPONSE (only TIMEOUT events), bdp must raise
+        TimeoutError once the deadline passes — not loop forever."""
+        mock_blpapi = MagicMock()
+        mock_blpapi.Event.TIMEOUT = "TIMEOUT"
+        mock_blpapi.Event.RESPONSE = "RESPONSE"
+        mock_import.return_value = mock_blpapi
+
+        session_mock = MagicMock()
+        session_mock.start.return_value = True
+        session_mock.openService.return_value = True
+        mock_blpapi.Session.return_value = session_mock
+
+        timeout_event = MagicMock()
+        timeout_event.eventType.return_value = "TIMEOUT"   # never a RESPONSE
+        session_mock.nextEvent.return_value = timeout_event
+
+        bs = BloombergSession()
+        bs.open()
+        # Make the deadline immediate so the test doesn't actually wait.
+        monkeypatch.setattr(BloombergSession, "_REQUEST_DEADLINE_S", 0.0)
+        monkeypatch.setattr(BloombergSession, "_EVENT_TIMEOUT_MS", 1)
+        with pytest.raises(TimeoutError, match="did not respond"):
+            bs.bdp(["AAPL US Equity"], ["ID_ISIN"])
+
+    @patch("nport.bloomberg._lazy_import_blpapi")
     def test_context_manager(self, mock_import):
         mock_blpapi = MagicMock()
         mock_import.return_value = mock_blpapi

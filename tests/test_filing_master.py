@@ -109,25 +109,28 @@ def test_split_produces_parseable_filing(tmp_path):
     assert fd.mon1_sales == "N/A"            # no AP order file → unknown
 
 
-# ── Capital flows (AP order book) ─────────────────────────────
+# ── Capital flows (EagleSTAR TB is the single writer; AP order book is x-check only) ──
 
 
-def test_build_applies_ap_order_flows(tmp_path):
-    orders = tmp_path / "orders.csv"
-    orders.write_text(
-        "Ticker,Side,Trade Date,Notional,Status\n"
-        "AAA,CREATE,4/10/2026,1000,ACCEPTED\n"
-        "AAA,REDEEM,6/2/2026,250,ACCEPTED\n"
-        "AAA,CREATE,6/3/2026,40,CANCELLED\n",       # excluded
-        encoding="utf-8",
-    )
+def test_flows_written_from_eaglestar_not_ap(tmp_path):
+    """Flows come from EagleSTAR TB (passed via fund_acct), NOT the AP order book.
+    build_filing_master no longer accepts/writes AP flows — AP is reconciliation-only."""
     p = tmp_path / "fm.xlsx"
-    build_filing_master([_crow("AAA", "1000")], "2026-06", p, ap_orders_path=orders)
+    fund_acct = {"AAA": {"mon1Sales": "1000.00", "mon3Redemption": "250.00"}}
+    build_filing_master([_crow("AAA", "1000")], "2026-06", p, fund_acct=fund_acct)
     rec = {r["Account"]: r for r in read_filing_master(p)}["AAA"]
-    assert rec["mon1Sales"] == "1000.00"        # April create
-    assert rec["mon3Redemption"] == "250.00"    # June redeem
-    assert rec["mon3Sales"] == "0.00"           # cancelled order excluded
-    assert rec["mon1Reinvestment"] == "N/A"     # never sourced from an order book
+    assert rec["mon1Sales"] == "1000.00"        # from EagleSTAR TB
+    assert rec["mon3Redemption"] == "250.00"
+    assert rec["mon1Reinvestment"] == "N/A"     # no feed
+
+
+def test_flows_na_without_eaglestar(tmp_path):
+    """No EagleSTAR → flows stay honest N/A (never guessed from an order book)."""
+    p = tmp_path / "fm.xlsx"
+    build_filing_master([_crow("AAA", "1000")], "2026-06", p)
+    rec = {r["Account"]: r for r in read_filing_master(p)}["AAA"]
+    assert rec["mon1Sales"] == "N/A"
+    assert rec["mon3Redemption"] == "N/A"
 
 
 # ── B.3 risk metrics ──────────────────────────────────────────

@@ -16,3 +16,6 @@ output/
 data/fund_accounting/.cache/
 data/fund_accounting/*.zip
 data/fund_accounting/*.mbox
+
+# Dropped exports/downloads landing in the repo root (never committed)
+/*.zip

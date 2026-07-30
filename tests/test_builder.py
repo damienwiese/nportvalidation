@@ -69,9 +69,13 @@ def test_signature_namespace(sample_data):
     assert sig.find(f"{{{NS_NPORTCOMMON}}}signature").text == "/s/ Emily Yuan"
 
 
-def test_cusip_to_isin_check_digit():
-    from nport.builder import cusip_to_isin
-    # Known ISINs (ISO 6166 check digit)
-    assert cusip_to_isin("037833100") == "US0378331005"   # Apple
-    assert cusip_to_isin("594918104") == "US5949181045"   # Microsoft
-    assert cusip_to_isin("912797UL9") == "US912797UL95"   # T-bill
+def test_bond_without_isin_emits_cusip_as_other(factories):
+    """A holding with a CUSIP but no Bloomberg ISIN/ticker emits the CUSIP as the `other`
+    identifier — ISIN is never synthesized from the CUSIP (no fabricated identifiers)."""
+    bond = factories.bond(isin="", ticker="", cusip="037833DX9")
+    xml = NportBuilder(factories.config(), factories.filing(), [bond]).to_xml_bytes()
+    root = etree.fromstring(xml)
+    ids = root.find(".//n:invstOrSec/n:identifiers", NS)
+    assert ids.find("n:isin", NS) is None              # never synthesized
+    other = ids.find("n:other", NS)
+    assert other.get("otherDesc") == "CUSIP" and other.get("value") == "037833DX9"

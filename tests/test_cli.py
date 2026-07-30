@@ -84,3 +84,28 @@ class TestNoCommand:
     def test_exits(self):
         with pytest.raises(SystemExit):
             main([])
+
+
+# ── LIVE gate ─────────────────────────────────────────────────
+
+
+def test_live_gate_blocks_on_review_flag(tmp_path, monkeypatch):
+    """A fund with an unresolved reconciliation REVIEW flag is blocked from LIVE."""
+    from nport import cli
+    monkeypatch.setattr(cli, "_MASTER_DIR", tmp_path)
+    (tmp_path / "reconciliation_2026-06.csv").write_text(
+        "check,fund,source_a,value_a,source_b,value_b,diff,flag\n"
+        "netAssets,BRZX,custodian,338695.50,NAV@20260624,564492.50,-225797.00,REVIEW\n"
+        "netAssets,ACLZ,custodian,243854.00,NAV@20260624,243854.26,-0.26,\n",
+        encoding="utf-8",
+    )
+    assert cli._live_gate_reasons("BRZX", "2026-06")          # blocked
+    assert cli._live_gate_reasons("ACLZ", "2026-06") == []    # clean → clear to file
+
+
+def test_live_gate_blocks_when_no_report(tmp_path, monkeypatch):
+    """No reconciliation report at all → LIVE can't be verified → blocked."""
+    from nport import cli
+    monkeypatch.setattr(cli, "_MASTER_DIR", tmp_path)
+    reasons = cli._live_gate_reasons("FDRS", "2026-06")
+    assert reasons and "reconciliation report" in reasons[0]

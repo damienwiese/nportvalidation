@@ -52,7 +52,11 @@ from nport.custodian import (
     build_treasury_entry,
     classify_holding,
     load_xml_reference,
+    parse_option_name,
+    parse_swap_ticker,
     write_security_master,
+    _parse_float as _to_float,
+    _parse_swap_security_name,
     _sm_entry_key,
     _sm_lookup_key,
 )
@@ -197,11 +201,12 @@ _BBG_FORMULA_COLUMNS = {col for _kf, fields in BLOOMBERG_SPECS.values() for col 
 _NAME_MAX_LEN = 30  # XSD <name> max length
 
 # Schema-valid default for a Bloomberg-owned field that comes back empty/#N/A.
-# Only fields with a meaningful N-PORT sentinel are listed: an issuer with no LEI
-# in Bloomberg is reported "N/A" (verified: no Bloomberg/BQL route to it here),
-# and a missing domicile defaults to US. isin/maturityDt/couponKind/annualizedRt
-# have NO default — a blank there is a real gap and must fail validation visibly.
-_FIELD_DEFAULT = {"lei": "N/A", "invCountry": "US"}
+# ONLY ``lei``: an issuer with no LEI in Bloomberg is genuinely reported "N/A" (verified:
+# no Bloomberg/BQL route to it), recorded as a NO_FEED gap in provenance. Everything else
+# — invCountry, isin, maturityDt, couponKind, annualizedRt — has NO default: a blank is a
+# real gap that must fail validation / surface for human review, never be silently guessed
+# (invCountry must NOT default to "US"; US issuers get "US" from Bloomberg CNTRY_OF_DOMICILE).
+_FIELD_DEFAULT = {"lei": "N/A"}
 
 # Date columns normalized to ISO YYYY-MM-DD on read. maturityDt comes from
 # Bloomberg via Excel `=TEXT(BDP(...))`, which can leak a locale string like
@@ -589,6 +594,15 @@ def _assemble_master_rows(
                     entry["unrealizedAppr"] = dv["unrealizedAppr"]
                 elif existing and (existing.get("unrealizedAppr") or "").strip():
                     entry["unrealizedAppr"] = existing["unrealizedAppr"]
+                # A swap's value (valUSD) IS its mark-to-market (unrealizedAppr), never the
+                # notional that custodian MarketValue carries. Derive valUSD/pctVal from it
+                # so the per-fund CSV the split writes is correct at source. (Options price
+                # at market value already, so build_option_entry's valUSD/pctVal stand.)
+                if ht == HoldingType.SWAP:
+                    ua = (entry.get("unrealizedAppr") or "").strip()
+                    na = _to_float(row.net_assets)
+                    entry["valUSD"] = ua
+                    entry["pctVal"] = f"{_to_float(ua) / na * 100:.2f}" if ua and na else ""
             else:
                 entry = existing if existing is not None else _build_entry(ht, row, ref)
             if entry:
@@ -675,6 +689,108 @@ def refresh_master(
 # ── Split (master → per-fund CSVs) ────────────────────────────
 
 
+def write_literal_workbook(path: Path, sheets: list[tuple[str, list[str], list[dict[str, str]]]]) -> None:
+    """Write sheets as LITERAL values (no formulas), text-formatting identifier columns.
+
+    Used to 'freeze' a master after a human-review merge: the Bloomberg formula RESULTS
+    (read via ``data_only``) are written back as plain values so they survive — openpyxl drops
+    a formula's cached result whenever it re-saves the formula, so re-emitting ``=BDP(...)``
+    here would lose the populated lei/isin/country/returns. ``sheets`` is ``[(name, header,
+    rows)]``.
+    """
+    wb = Workbook()
+    wb.remove(wb.active)
+    for name, header, rows in sheets:
+        ws = wb.create_sheet(name)
+        ws.append(header)
+        for r in rows:
+            ws.append([r.get(c, "") for c in header])
+        text_cols = [i + 1 for i, c in enumerate(header) if c in ID_TEXT_COLUMNS]
+        for ci in text_cols:
+            for er in range(2, ws.max_row + 1):
+                ws.cell(row=er, column=ci).number_format = "@"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".xlsx")
+    os.close(fd)
+    try:
+        wb.save(tmp)
+        Path(tmp).replace(path)
+    except Exception:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def merge_review_into_master(master_path: Path, review) -> int:
+    """Overlay human-reviewed reference data onto the security master, in place.
+
+    Reads the (Bloomberg-populated) master, applies the reviewed swap counterparty/legs,
+    option index, and any supplied invCountry/isin, and writes it back as a LITERAL workbook
+    (freezing the Bloomberg results — see ``write_literal_workbook``). After this the master is
+    a complete, inspectable snapshot that ``split_master`` projects verbatim. Returns the number
+    of swap/option rows that still lack their reviewed reference data (a gap).
+    """
+    rows, header = read_master_xlsx(master_path)
+    apply_review_to_rows(rows, review)
+    write_literal_workbook(master_path, [("master", header, rows)])
+    gaps = 0
+    for r in rows:
+        dc = (r.get("derivCat") or "").strip()
+        if dc == "SWP" and not (r.get("counterpartyName") or "").strip():
+            gaps += 1
+        elif dc == "OPT" and not (r.get("refIndexName") or "").strip():
+            gaps += 1
+    return gaps
+
+
+def apply_review_to_rows(rows: list[dict[str, str]], review) -> None:
+    """Overlay human-reviewed reference data onto master rows, in place.
+
+    Fills the fields ``build_*_entry`` deliberately leave blank — swap counterparty
+    name/LEI and leg economics, option underlying index — plus any still-blank invCountry/
+    isin the operator supplied. The review workbook is authoritative for these columns; an
+    item with no reviewed value stays blank (a gap that the LIVE gate refuses to ship).
+    """
+    cps = review.swap_counterparties()
+    legs = review.swap_legs()
+    opt_idx = review.option_index()
+    inv = review.inv_country()
+    isins = review.isin()
+    leg_cols = ("recFixedOrFloating", "recDesc", "pmntFloatingRtIndex",
+                "pmntFloatingRtSpread", "pmntRateTenor", "pmntRateUnit")
+    for r in rows:
+        acct = (r.get("Account") or "").strip()
+        dc = (r.get("derivCat") or "").strip()
+        ticker = (r.get("ticker") or "").strip()
+        if dc == "SWP":
+            try:
+                code = parse_swap_ticker(ticker).counterparty_abbrev
+            except ValueError:
+                code = ""
+            if not code:
+                code = _parse_swap_security_name(r.get("title", ""))[1]
+            cp = cps.get(code.upper())
+            if cp:
+                r["counterpartyName"], r["counterpartyLei"] = cp
+            leg = legs.get((acct, ticker))
+            if leg:
+                for c in leg_cols:
+                    if (leg.get(c) or "").strip():
+                        r[c] = leg[c]
+        elif dc == "OPT":
+            try:
+                underlying = parse_option_name(r.get("title", "")).underlying
+            except ValueError:
+                underlying = ticker.split("-")[0]
+            idx = opt_idx.get(underlying)
+            if idx:
+                r["refIndexName"], r["refIndexIdentifier"] = idx
+        key = (acct, (r.get("cusip") or "").strip() or ticker)
+        if not (r.get("invCountry") or "").strip() and key in inv:
+            r["invCountry"] = inv[key]
+        if not (r.get("isin") or "").strip() and key in isins:
+            r["isin"] = isins[key]
+
+
 def split_master(
     master_path: Path,
     funds_dir: Path,
@@ -683,11 +799,10 @@ def split_master(
 ) -> list[tuple[str, Path, int]]:
     """Write each fund's per-fund security_master.csv from the master.
 
-    Every per-fund file is a literal projection of the master: the SAME full
-    column set (``Account``/``bbgid``/``rawTicker`` + every enrichment column,
-    in master order), just filtered to that fund's rows by ``Account``. Type-
-    irrelevant cells stay blank, exactly as in the master. The build's loader
-    maps known headers and ignores the rest, so the master-only columns are inert.
+    A pure projection: the SAME full column set (``Account``/``bbgid``/``rawTicker`` + every
+    enrichment column, in master order), filtered to that fund's rows by ``Account``. Human-
+    reviewed reference data is merged into the master beforehand by ``nport mergehumanreview``
+    (see ``merge_review_into_master``), so split itself needs no review logic.
 
     Returns ``[(account, path, n_rows)]``.
     """

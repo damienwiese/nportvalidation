@@ -20,7 +20,6 @@ from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
 
-from nport.ap_orders import flows_from_csv
 from nport.config import _FILING_KEY_MAP
 from nport.custodian import (
     HoldingType,
@@ -29,6 +28,7 @@ from nport.custodian import (
     parse_custodian_csv,
 )
 from nport.master_sheet import _cell_to_str
+from nport.numbers import fnum as _fnum
 
 # ── Schema ────────────────────────────────────────────────────
 
@@ -64,43 +64,10 @@ _CONST = {
     "isNonCashCollateral": "N", "nameDesignatedIndex": "N/A", "indexIdentifier": "N/A",
 }
 
-# Designated (broad-based) index per fund. Source: Bloomberg FUND_BENCHMARK_PRIM per ticker
-# (gathered via the MCP), resolved to the index name (LONG_COMP_NAME). N-PORT wants the
-# broad-based comparison index, so proprietary/strategy benchmarks (FDRX→FDRI) and funds where
-# Bloomberg returns no benchmark (CTMA, DOCK, MGKX, XEUR, XLIX) are omitted → stay N/A for
-# prospectus fill. Verify against the 497K returns table before going LIVE.
-_INDEX_NAME = {
-    "SPX": "S&P 500 Index", "SPXT": "S&P 500 Total Return Index",
-    "NDX": "Nasdaq-100 Index", "RTY": "Russell 2000 Index",
-    "MXWD": "MSCI ACWI Index", "MXEF": "MSCI Emerging Markets Index", "MXEA": "MSCI EAFE Index",
-    "CFIIBL3P": "FTSE US Treasury Bill 3-12 Months Index",
-    "SBMMTB3": "FTSE 3-Month US Treasury Bill Index",
-    "CFIIH52C": "FTSE US High-Yield Market 0-5 Years 2% Capped Index",
-    "CFIIBD37": "FTSE US Treasury 3-7 Years Index",
-    "SBUSC15U": "FTSE US Broad Investment-Grade Corporate Bond 1-5 Years Index",
-    "SBUST13U": "FTSE US Treasury 1-3 Years Index",
-}
-_BENCHMARK_FUNDS = {
-    "SPX": ("AV BAY BLCK BREW BZZ CBOT CJUN CMAG CQTM CTJN DIPR EUV EUVX EYES GASZ GLAM GNMX "
-            "HJUN HMAY HULL JOUL JUNC KYC LATR NYNY ODDZ OWN PTNT STYL USX VBX VOOX WATS WNDR "
-            "WR XA XAGI XBIX XCOM XHOA XIWC XKRE XLBX XLEX XLFX XLKX XLPX XLUX XLVX XLYX XPAV "
-            "XSEM XVO XVUG YUNG "
-            "ACLZ ACMM CAMC CARX CRUC KEYX LASC LRNX MNSX MSIX ONTX SIMX TPLX UMCX"),
-    "SPXT": "FDRS GPTZ CMAY MAYC",
-    "NDX": "QJN QMY QQJN QQMY",
-    "RTY": "SCJN SCMY",
-    "MXWD": "BRZX CCPX EMXX KRWX TAJX WEBX WX XW XTAI",
-    "MXEF": "EMJN EMMY",
-    "MXEA": "IDJN IDMY",
-    "CFIIBL3P": "CBIL", "SBMMTB3": "CGOV", "CFIIH52C": "CHYG",
-    "CFIIBD37": "CIEI", "SBUSC15U": "CIVG", "SBUST13U": "CUST",
-}
-# ticker -> (index name, index identifier)
-_DESIGNATED_INDEX = {
-    t: (_INDEX_NAME[bench], bench)
-    for bench, funds in _BENCHMARK_FUNDS.items()
-    for t in funds.split()
-}
+# The designated broad-based index per fund used to be a hardcoded ticker→index map here.
+# It is now reviewed reference data in the human-review workbook (designated_index sheet,
+# seeded from those values in nport.humanreview) and applied at split_filing_master. Funds
+# with no reviewed entry stay N/A (the _CONST default) for prospectus fill.
 # Balance-sheet items: a genuine 0 for plain ETFs (no borrowings/payables) — not fabricated.
 _ZERO_FIELDS = [
     "assetsAttrMiscSec", "assetsInvested",
@@ -119,13 +86,6 @@ _NA_FIELDS = [
 # without one, the value is genuinely unknown → "N/A".
 _FLOW_SR_FIELDS = ["mon1Sales", "mon1Redemption", "mon2Sales", "mon2Redemption",
                    "mon3Sales", "mon3Redemption"]
-
-
-def _fnum(x) -> float:
-    try:
-        return float(str(x).replace(",", "").strip())
-    except (TypeError, ValueError):
-        return 0.0
 
 
 def _month_ranges(period: str) -> list[tuple[str, str]]:
@@ -299,17 +259,17 @@ def _write_risk_sheet(wb, custodian_rows: list) -> None:
 
 def build_filing_master(
     custodian_rows: list, period: str, path: Path,
-    ap_orders_path: Path | None = None,
     fund_acct: dict[str, dict[str, str]] | None = None,
 ) -> int:
     """Write the per-period filing master workbook. Returns the fund count.
 
-    When ``ap_orders_path`` is given, monthly Sales/Redemption flows are aggregated
-    from the AP creation/redemption order book and written as literal cells (the
-    operator can still override). When ``fund_acct`` (``{ticker: {field: value}}``,
-    from ``eaglestar.load``) is given, the EagleSTAR-owned fields it carries (monthly
-    realized/unrealized gains, real balance-sheet liabilities) override the ``N/A``/
-    ``0`` defaults — additively, only where a value is present. A ``risk`` worksheet of
+    When ``fund_acct`` (``{ticker: {field: value}}``, from ``eaglestar.load``) is given,
+    the EagleSTAR-owned fields it carries override the ``N/A``/``0`` defaults — additively,
+    only where a value is present. EagleSTAR is the single writer for ALL dollar values:
+    monthly realized/unrealized gains, balance-sheet totals/liabilities, AND the monthly
+    capital flows (TB subscriptions/redemptions, folded into ``fund_acct`` by
+    ``eaglestar.load``). The AP order book is NOT written here — it is an x-check only,
+    compared against the TB flows in the reconciliation report. A ``risk`` worksheet of
     per-debt-holding Bloomberg duration ``=BDP`` formulas is always emitted for B.3
     aggregation at split time.
     """
@@ -319,7 +279,6 @@ def build_filing_master(
     ranges = _month_ranges(period)
     signed = _signed_date(period)
 
-    flows = flows_from_csv(Path(ap_orders_path), period) if ap_orders_path else {}
     fund_acct = fund_acct or {}
 
     by_acct: dict[str, list] = defaultdict(list)
@@ -338,9 +297,10 @@ def build_filing_master(
             rec[c] = "0"
         for c in _NA_FIELDS:
             rec[c] = "N/A"
-        sr_default = "0" if ap_orders_path else "N/A"
+        # Flows have no default feed here — EagleSTAR TB (folded into fund_acct) is the
+        # writer; an uncovered fund stays N/A (honest, surfaced as a gap), never AP-guessed.
         for c in _FLOW_SR_FIELDS:
-            rec[c] = sr_default
+            rec[c] = "N/A"
         rec.update(_CONST)
         rec["repPdEnd"] = end_date
         rec["repPdDate"] = end_date
@@ -348,15 +308,10 @@ def build_filing_master(
         rec["netAssets"] = f"{net:.2f}"
         rec["totLiabs"] = f"{liabs:.2f}"
         rec["totAssets"] = f"{net + liabs:.2f}"
-        # Designated broad-based index (Bloomberg); funds without one stay the _CONST N/A.
-        idx = _DESIGNATED_INDEX.get(acct)
-        if idx:
-            rec["nameDesignatedIndex"], rec["indexIdentifier"] = idx
-        # Capital flows from the AP order book (Sales/Redemption; reinvestment stays 0).
-        for k, v in flows.get(acct, {}).items():
-            rec[k] = v
-        # EagleSTAR fund-accounting fills (gains, real liabilities) — override the
-        # _NA_FIELDS/_ZERO_FIELDS defaults only where a real value is present.
+        # Designated index is reviewed reference data applied at split_filing_master; it stays
+        # the _CONST "N/A" here. EagleSTAR fund-accounting fills — the single writer for every dollar value:
+        # balance-sheet totals/liabilities, monthly gains, AND monthly flows (TB
+        # subscriptions/redemptions). Overrides the N/A/0 defaults only where present.
         for k, v in fund_acct.get(acct, {}).items():
             if v not in (None, "", "N/A"):
                 rec[k] = v
@@ -403,11 +358,10 @@ def build_filing_master(
 
 def build_filing_master_from_custodian(
     custodian_path: Path, period: str, path: Path,
-    ap_orders_path: Path | None = None,
     fund_acct: dict[str, dict[str, str]] | None = None,
 ) -> int:
     return build_filing_master(
-        parse_custodian_csv(Path(custodian_path)), period, path, ap_orders_path, fund_acct)
+        parse_custodian_csv(Path(custodian_path)), period, path, fund_acct)
 
 
 # ── Read + split (filing master → filing_data.txt) ────────────
@@ -493,11 +447,44 @@ def _format_filing_data(rec: dict[str, str], period: str) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def merge_review_into_filing_master(master_path: Path, review) -> int:
+    """Overlay the human-reviewed designated index onto the filing master, in place.
+
+    Reads the (Bloomberg-populated) filing master + its risk sheet, applies the reviewed
+    designated broad-based index per fund, and writes both sheets back as LITERAL values
+    (freezing the cached rtn1-3 / durations — see ``master_sheet.write_literal_workbook``).
+    Funds with no reviewed entry keep the ``N/A`` default. Returns the count of funds left at
+    ``N/A`` (informational — a missing designated index is allowed, not a hard gap).
+    """
+    from nport.master_sheet import write_literal_workbook
+
+    designated = review.designated_index()
+    filing_rows = read_filing_master(master_path)
+    risk_rows = read_risk_sheet(master_path)
+    na = 0
+    for rec in filing_rows:
+        acct = (rec.get("Account") or "").strip().upper()
+        idx = designated.get(acct)
+        if idx:
+            rec["nameDesignatedIndex"], rec["indexIdentifier"] = idx
+        if (rec.get("nameDesignatedIndex") or "N/A") == "N/A":
+            na += 1
+    sheets = [("filing", HEADER, filing_rows)]
+    if risk_rows:
+        sheets.append(("risk", RISK_HEADER, risk_rows))
+    write_literal_workbook(master_path, sheets)
+    return na
+
+
 def split_filing_master(
     master_path: Path, funds_dir: Path, period: str, accounts: list[str] | None = None,
     dry_run: bool = False,
 ) -> list[tuple[str, Path]]:
-    """Write each fund's filings/<period>/filing_data.txt from the filing master."""
+    """Write each fund's filings/<period>/filing_data.txt from the filing master.
+
+    A pure projection. The reviewed designated index is merged into the filing master
+    beforehand by ``nport mergehumanreview`` (see ``merge_review_into_filing_master``).
+    """
     rows = read_filing_master(master_path)
     risk_by_acct: dict[str, list[dict]] = defaultdict(list)
     for rr in read_risk_sheet(master_path):

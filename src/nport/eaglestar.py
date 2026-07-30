@@ -27,6 +27,8 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from nport.numbers import fnum as _fnum
+
 # ── Trial Balance cryptic columns (verified) ───────────────────
 _TB_NAME = "F1086"        # GL account name
 _TB_END = "F64008"        # ending balance (signed)
@@ -43,6 +45,11 @@ _PAYABLE_RE = re.compile(
     r"(INVESTMENT PAYABLE|SWAP PAYABLE|ACCRUED .*FEE|ACCOUNTS PAYABLE REDEMPTIONS"
     r"|BROKER INTEREST PAYABLE|TAX PAYABLE|EXPENSE REIMBURSEMENT PAYABLE)", re.I)
 _TOTAL_LIABS_RE = re.compile(r"TOTAL LIABILITIES", re.I)
+# Balance-sheet totals, anchored so they match the single subtotal line (not e.g.
+# "TOTAL ASSETS ATTRIBUTABLE TO ..."). NET ASSETS appears twice in the TB (asset/
+# liability section and capital section, equal by construction) → take last, not sum.
+_TOTAL_ASSETS_RE = re.compile(r"^TOTAL ASSETS$", re.I)
+_NET_ASSETS_RE = re.compile(r"^NET ASSETS$", re.I)
 _SUBSCRIPTIONS_RE = re.compile(r"^SUBSCRIPTIONS$", re.I)
 _REDEMPTIONS_RE = re.compile(r"^REDEMPTIONS$", re.I)
 
@@ -53,13 +60,6 @@ _GAIN_SIGN = 1
 _FLOW_MONTHS = ("mon1", "mon2", "mon3")
 _DATE_RE = re.compile(r"(\d{8})")
 _TYPES = {"PVal": "pval", "Trial_Balance": "tb", "NAV_Sum": "nav"}
-
-
-def _fnum(x) -> float:
-    try:
-        return float(str(x).replace(",", "").strip())
-    except (TypeError, ValueError):
-        return 0.0
 
 
 def _period_months(period: str) -> list[str]:
@@ -89,13 +89,17 @@ def _baseline_month(period: str) -> str:
 
 
 def resolve_export(folder: Path) -> Path | None:
-    """The newest ``*.zip`` or ``*.mbox`` in ``folder``; None if there isn't one."""
+    """The newest ``*.zip`` or ``*.mbox`` in ``folder``; None if there isn't one.
+
+    Ordered by NAME, not mtime: the exports are timestamped filenames
+    (``takeout-YYYYMMDD...``), so name order is chronological AND deterministic across
+    machines/checkouts (git doesn't preserve mtime), which mtime ordering is not.
+    """
     folder = Path(folder)
     if not folder.is_dir():
         return None
     cands = sorted(
-        (p for p in folder.glob("*") if p.suffix.lower() in (".zip", ".mbox")),
-        key=lambda p: p.stat().st_mtime,
+        p for p in folder.glob("*") if p.suffix.lower() in (".zip", ".mbox")
     )
     return cands[-1] if cands else None
 
@@ -196,17 +200,23 @@ def entity_ticker_map(cache_dir: Path) -> dict[str, str]:
 # ── Derivatives (PVal) ─────────────────────────────────────────
 
 
-def derivative_values(cache_dir: Path, period: str, ent_tic: dict[str, str]) -> dict[tuple[str, str], dict[str, str]]:
-    """``{(ticker, asset_id): {'unrealizedAppr': value}}`` from the period-end PVal.
+def derivative_values(
+    cache_dir: Path, period: str, ent_tic: dict[str, str],
+) -> tuple[dict[tuple[str, str], dict[str, str]], str | None]:
+    """``({(ticker, asset_id): {'unrealizedAppr': value}}, snapshot_date)`` from the period-end PVal.
 
     Options: ``Total Unreal G/L Base`` directly. Swaps: only the ``_R`` leg (the
     base/``_P`` legs are 0); the leg suffix is on ``Issue Name``, while
     ``Primary Asset ID`` already equals the custodian StockTicker.
+
+    Always returns a 2-tuple; the no-PVal path returns ``({}, None)`` (the caller
+    unpacks ``derivs, pval_date = derivative_values(...)``, so a bare ``{}`` here
+    would crash the whole ``masters`` run with a ValueError).
     """
     dates = _dates(cache_dir, "pval")
     snap = _latest_in_month(dates, _period_months(period)[-1]) or (dates[-1] if dates else None)
     if not snap:
-        return {}
+        return {}, None
     out: dict[tuple[str, str], dict[str, str]] = {}
     for r in _read(cache_dir, "pval", snap):
         typ = (r.get("Investment Type Desc") or "").strip()
@@ -256,15 +266,29 @@ def filing_values(cache_dir: Path, period: str, ent_tic: dict[str, str]) -> tupl
     realized = [_tb_snapshot_sums(cache_dir, s, _REALIZED_RE) for s in snaps]
     unreal = [_tb_snapshot_sums(cache_dir, s, _UNREAL_RE) for s in snaps]
 
-    # Period-end snapshot drives liabilities + the TOTAL LIABILITIES tie-out.
+    # Period-end snapshot drives liabilities, the balance-sheet totals, and the
+    # TOTAL LIABILITIES tie-out.
     end_snap = snaps[-1]
     payables = _tb_snapshot_sums(cache_dir, end_snap, _PAYABLE_RE)
-    total_liabs_rows = _read(cache_dir, "tb", end_snap) if end_snap else []
+    end_rows = _read(cache_dir, "tb", end_snap) if end_snap else []
+    # Authoritative GAAP balance sheet straight from the trial balance. These REPLACE
+    # the custodian-derived gross-up in the filing master: for a swap fund the custodian
+    # carries the swap at notional and plugs the financing into a negative "Cash&Other",
+    # which inflates totAssets/totLiabs to ~2x reality. The TB carries only the swap's
+    # mark-to-market, so its TOTAL ASSETS / NET ASSETS are the real numbers.
+    total_assets: dict[str, float] = {}
     total_liabs: dict[str, float] = {}
-    for r in total_liabs_rows:
-        if _TOTAL_LIABS_RE.search(r.get(_TB_NAME) or ""):
-            ent = (r.get(_TB_ENTITY) or "").strip()
-            total_liabs[ent] = total_liabs.get(ent, 0.0) + _fnum(r.get(_TB_END))
+    net_assets_bs: dict[str, float] = {}
+    for r in end_rows:
+        name = r.get(_TB_NAME) or ""
+        ent = (r.get(_TB_ENTITY) or "").strip()
+        val = _fnum(r.get(_TB_END))
+        if _TOTAL_ASSETS_RE.match(name):
+            total_assets[ent] = val            # last wins (single subtotal line)
+        elif _TOTAL_LIABS_RE.search(name):
+            total_liabs[ent] = val
+        elif _NET_ASSETS_RE.match(name):
+            net_assets_bs[ent] = val            # appears twice, equal → last wins
 
     values: dict[str, dict[str, str]] = {}
     liab_xcheck: dict[str, float] = {}
@@ -278,8 +302,16 @@ def filing_values(cache_dir: Path, period: str, ent_tic: dict[str, str]) -> tupl
         pay = payables.get(ent, 0.0)
         if pay > 0:
             rec["amtPayOneYrOther"] = f"{pay:.2f}"
-        # Only emit a fund that actually appears in the TB snapshots.
-        if any(ent in realized[i] or ent in unreal[i] for i in range(len(snaps))) or pay:
+        # Authoritative balance sheet (overrides the custodian gross-up in the filing master).
+        if ent in total_assets:
+            rec["totAssets"] = f"{total_assets[ent]:.2f}"
+        if ent in total_liabs:
+            rec["totLiabs"] = f"{total_liabs[ent]:.2f}"
+        if ent in net_assets_bs:
+            rec["netAssets"] = f"{net_assets_bs[ent]:.2f}"
+        # Emit a fund that appears in the TB snapshots (gains, payables, or a balance sheet).
+        if (any(ent in realized[i] or ent in unreal[i] for i in range(len(snaps)))
+                or pay or ent in total_assets):
             values[ticker] = rec
             if ent in total_liabs:
                 liab_xcheck[ticker] = total_liabs[ent]
@@ -345,10 +377,18 @@ def load(export: Path, period: str, cache_dir: Path | None = None) -> EagleStarD
     derivs, pval_date = derivative_values(cache_dir, period, ent_tic)
     filing, liabs, as_of = filing_values(cache_dir, period, ent_tic)
     as_of["pval"] = pval_date
+    flows = flow_values(cache_dir, period, ent_tic)
+    # TB subscriptions/redemptions are the authoritative flow WRITER — they tie to the
+    # same trial balance that produces netAssets/gains. Fold them into the per-fund filing
+    # fields for every TB-covered fund so the filing master writes them; the AP order book
+    # remains an x-check only (kept on .flows for the reconciliation report).
+    for tic in filing:
+        if tic in flows:
+            filing[tic].update(flows[tic])
     return EagleStarData(
         filing=filing,
         derivatives=derivs,
-        flows=flow_values(cache_dir, period, ent_tic),
+        flows=flows,
         tb_total_liabs=liabs,
         nav_net_assets=nav_net_assets(cache_dir, period, ent_tic),
         entity_ticker=ent_tic,

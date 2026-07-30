@@ -123,7 +123,7 @@ The three above are all you need monthly. Full list:
 
 **Advanced / power-user** (you normally won't need these — `masters`/`split` wrap them):
 `build-master`, `split-master`, `build-filing-master`, `split-filing-master`, `generate`,
-`enrich`, `merge`, `new-filing`, `update-masters`, `check-schema`, `schema`.
+`enrich`, `merge`, `new-filing`, `check-schema`, `schema`.
 
 Defaults that save typing: omit the period → newest custodian file; a bare fund name
 (`fdrs`) → `data/funds/fdrs`; the custodian/order paths are derived from the period.

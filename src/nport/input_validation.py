@@ -124,8 +124,11 @@ def validate_config(config: FundConfig) -> tuple[list[str], list[str]]:
     return errors, warnings
 
 
-def validate_filing(filing: FilingData) -> tuple[list[str], list[str]]:
+def validate_filing(
+    filing: FilingData, today: "date | None" = None,
+) -> tuple[list[str], list[str]]:
     errors, warnings = [], []
+    today = today or date.today()
 
     _check_set(errors, _VALID_SUBMISSION_TYPES, filing.submission_type, "submissionType")
     _check_date(errors, filing.rep_pd_end, "repPdEnd")
@@ -164,7 +167,7 @@ def validate_filing(filing: FilingData) -> tuple[list[str], list[str]]:
             warnings.append(f"dateSigned ({filing.date_signed}) is before repPdEnd ({filing.rep_pd_end}).")
         if (signed - pd_end).days > 90:
             warnings.append(f"dateSigned is {(signed - pd_end).days} days after repPdEnd — filings due within 60 days.")
-        if pd_end > date.today():
+        if pd_end > today:
             warnings.append(f"repPdEnd ({filing.rep_pd_end}) is in the future.")
     except ValueError:
         pass
@@ -343,11 +346,12 @@ def validate_holdings(holdings: list[Holding], rep_pd_end: str = "") -> tuple[li
 
 def validate_all(
     config: FundConfig, filing: FilingData, holdings: list[Holding],
+    today: "date | None" = None,
 ) -> tuple[list[str], list[str]]:
     errors, warnings = [], []
     for fn, args in [
         (validate_config, (config,)),
-        (validate_filing, (filing,)),
+        (validate_filing, (filing, today)),
         (validate_holdings, (holdings, filing.rep_pd_end)),
     ]:
         e, w = fn(*args)

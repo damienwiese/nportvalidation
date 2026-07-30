@@ -52,14 +52,21 @@ def check_schema_files(schema_dir: str | Path | None = None) -> tuple[list[str],
     return errors, warnings
 
 
-def check_for_schema_update(force: bool = False, cache_days: int = 7) -> tuple[str | None, list[str]]:
-    """Check SEC website for a newer N-PORT schema version. Uses local cache."""
+def check_for_schema_update(
+    force: bool = False, cache_days: int = 7, now: "datetime | None" = None,
+) -> tuple[str | None, list[str]]:
+    """Check SEC website for a newer N-PORT schema version. Uses local cache.
+
+    ``now`` is injectable (defaults to the real clock) so tests pin the cache-TTL
+    decision deterministically. It only gates a network refresh — never filing content.
+    """
     warnings = []
+    now = now or datetime.now()
 
     if not force and _CACHE_FILE.exists():
         try:
             cache = json.loads(_CACHE_FILE.read_text())
-            if (datetime.now() - datetime.fromisoformat(cache["last_check"])).days < cache_days:
+            if (now - datetime.fromisoformat(cache["last_check"])).days < cache_days:
                 if cache.get("newer_version"):
                     warnings.append(
                         f"Schema update available: v{cache['newer_version']} "
@@ -100,7 +107,7 @@ def check_for_schema_update(force: bool = False, cache_days: int = 7) -> tuple[s
     try:
         _CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
         _CACHE_FILE.write_text(json.dumps({
-            "last_check": datetime.now().isoformat(),
+            "last_check": now.isoformat(),
             "current_version": CURRENT_SCHEMA_VERSION,
             "newer_version": newer_version,
         }))

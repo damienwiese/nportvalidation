@@ -14,6 +14,8 @@ import csv
 from dataclasses import dataclass
 from pathlib import Path
 
+from nport.numbers import fnum as _fnum
+
 # Reporting-period month order: mon1 earliest … mon3 = the report month.
 _FLOW_MONTHS = ("mon1", "mon2", "mon3")
 
@@ -25,13 +27,6 @@ class ApOrder:
     trade_date: str    # raw M/D/YYYY
     notional: str
     status: str        # ACCEPTED / CANCELLED
-
-
-def _fnum(x) -> float:
-    try:
-        return float(str(x).replace(",", "").strip())
-    except (TypeError, ValueError):
-        return 0.0
 
 
 def _year_month(trade_date: str) -> str | None:
