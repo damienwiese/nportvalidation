@@ -37,9 +37,9 @@
       <isFinalFiling>N</isFinalFiling>
     </genInfo>
     <fundInfo>
-      <totAssets>2845473.03</totAssets>
-      <totLiabs>1473998.03</totLiabs>
-      <netAssets>1371475.00</netAssets>
+      <totAssets>417247.29</totAssets>
+      <totLiabs>25397.58</totLiabs>
+      <netAssets>391849.71</netAssets>
       <assetsAttrMiscSec>0</assetsAttrMiscSec>
       <assetsInvested>0</assetsInvested>
       <amtPayOneYrBanksBorr>0</amtPayOneYrBanksBorr>
@@ -56,15 +56,15 @@
       <isNonCashCollateral>N</isNonCashCollateral>
       <returnInfo>
         <monthlyTotReturns>
-          <monthlyTotReturn classId="C000273292" rtn1="N/A" rtn2="N/A" rtn3="N/A"/>
+          <monthlyTotReturn classId="C000273292" rtn1="N/A" rtn2="N/A" rtn3="-16.74"/>
         </monthlyTotReturns>
         <othMon1 netRealizedGain="0.00" netUnrealizedAppr="0.00"/>
         <othMon2 netRealizedGain="0.00" netUnrealizedAppr="0.00"/>
         <othMon3 netRealizedGain="280064.85" netUnrealizedAppr="-28744.82"/>
       </returnInfo>
       <mon1Flow redemption="0.00" reinvestment="N/A" sales="0.00"/>
-      <mon2Flow redemption="0.00" reinvestment="N/A" sales="0.00"/>
-      <mon3Flow redemption="1287098.00" reinvestment="N/A" sales="2356487.00"/>
+      <mon2Flow redemption="0.00" reinvestment="N/A" sales="250000.00"/>
+      <mon3Flow redemption="1287098.00" reinvestment="N/A" sales="1175252.00"/>
       <varInfo>
         <fundsDesignatedInfo>
           <nameDesignatedIndex>MSCI ACWI Index</nameDesignatedIndex>
@@ -85,8 +85,8 @@
         <balance>1</balance>
         <units>NC</units>
         <curCd>USD</curCd>
-        <valUSD>2580160.80</valUSD>
-        <pctVal>188.13</pctVal>
+        <valUSD>-32386.85</valUSD>
+        <pctVal>-2.36</pctVal>
         <payoffProfile>N/A</payoffProfile>
         <assetCat>DE</assetCat>
         <issuerConditional desc="N/A" issuerCat="OTHER"/>
@@ -145,8 +145,8 @@
         <balance>1</balance>
         <units>NC</units>
         <curCd>USD</curCd>
-        <valUSD>156229.92</valUSD>
-        <pctVal>11.39</pctVal>
+        <valUSD>9903.94</valUSD>
+        <pctVal>0.72</pctVal>
         <payoffProfile>N/A</payoffProfile>
         <assetCat>DE</assetCat>
         <issuerConditional desc="N/A" issuerCat="OTHER"/>

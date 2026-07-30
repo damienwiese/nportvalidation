@@ -37,9 +37,9 @@
       <isFinalFiling>N</isFinalFiling>
     </genInfo>
     <fundInfo>
-      <totAssets>4258415.00</totAssets>
-      <totLiabs>0.00</totLiabs>
-      <netAssets>4258415.00</netAssets>
+      <totAssets>4258506.38</totAssets>
+      <totLiabs>94.21</totLiabs>
+      <netAssets>4258412.17</netAssets>
       <assetsAttrMiscSec>0</assetsAttrMiscSec>
       <assetsInvested>0</assetsInvested>
       <amtPayOneYrBanksBorr>0</amtPayOneYrBanksBorr>
@@ -56,24 +56,24 @@
       <curMetrics>
         <curMetric>
           <curCd>USD</curCd>
-          <intrstRtRiskdv01 period3Mon="0.00" period1Yr="137.82" period5Yr="997.19" period10Yr="5.73" period30Yr="6.48"/>
-          <intrstRtRiskdv100 period3Mon="0.00" period1Yr="13781.92" period5Yr="99719.17" period10Yr="573.15" period30Yr="647.98"/>
+          <intrstRtRiskdv01 period3Mon="0.00" period1Yr="136.61" period5Yr="993.05" period10Yr="5.70" period30Yr="6.45"/>
+          <intrstRtRiskdv100 period3Mon="0.00" period1Yr="13660.60" period5Yr="99304.89" period10Yr="570.32" period30Yr="645.34"/>
         </curMetric>
       </curMetrics>
-      <creditSprdRiskInvstGrade period3Mon="0.00" period1Yr="136.21" period5Yr="991.19" period10Yr="5.73" period30Yr="6.48"/>
+      <creditSprdRiskInvstGrade period3Mon="0.00" period1Yr="135.03" period5Yr="987.23" period10Yr="5.70" period30Yr="6.45"/>
       <creditSprdRiskNonInvstGrade period3Mon="0.00" period1Yr="0.00" period5Yr="0.00" period10Yr="0.00" period30Yr="0.00"/>
       <isNonCashCollateral>N</isNonCashCollateral>
       <returnInfo>
         <monthlyTotReturns>
-          <monthlyTotReturn classId="C000274891" rtn1="N/A" rtn2="N/A" rtn3="N/A"/>
+          <monthlyTotReturn classId="C000274891" rtn1="N/A" rtn2="N/A" rtn3="0.27"/>
         </monthlyTotReturns>
         <othMon1 netRealizedGain="0.00" netUnrealizedAppr="0.00"/>
         <othMon2 netRealizedGain="0.00" netUnrealizedAppr="0.00"/>
         <othMon3 netRealizedGain="0.00" netUnrealizedAppr="-3861.87"/>
       </returnInfo>
       <mon1Flow redemption="0.00" reinvestment="N/A" sales="0.00"/>
-      <mon2Flow redemption="0.00" reinvestment="N/A" sales="0.00"/>
-      <mon3Flow redemption="0.00" reinvestment="N/A" sales="4253878.00"/>
+      <mon2Flow redemption="0.00" reinvestment="N/A" sales="250000.00"/>
+      <mon3Flow redemption="0.00" reinvestment="N/A" sales="4003878.00"/>
       <varInfo>
         <fundsDesignatedInfo>
           <nameDesignatedIndex>FTSE US Broad Investment-Grade Corporate Bond 1-5 Years Index</nameDesignatedIndex>

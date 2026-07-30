@@ -37,9 +37,9 @@
       <isFinalFiling>N</isFinalFiling>
     </genInfo>
     <fundInfo>
-      <totAssets>1458965.04</totAssets>
-      <totLiabs>797585.04</totLiabs>
-      <netAssets>661380.00</netAssets>
+      <totAssets>666103.38</totAssets>
+      <totLiabs>4722.63</totLiabs>
+      <netAssets>661380.75</netAssets>
       <assetsAttrMiscSec>0</assetsAttrMiscSec>
       <assetsInvested>0</assetsInvested>
       <amtPayOneYrBanksBorr>0</amtPayOneYrBanksBorr>
@@ -56,15 +56,15 @@
       <isNonCashCollateral>N</isNonCashCollateral>
       <returnInfo>
         <monthlyTotReturns>
-          <monthlyTotReturn classId="C000273354" rtn1="N/A" rtn2="N/A" rtn3="N/A"/>
+          <monthlyTotReturn classId="C000273354" rtn1="N/A" rtn2="N/A" rtn3="6.85"/>
         </monthlyTotReturns>
         <othMon1 netRealizedGain="0.00" netUnrealizedAppr="0.00"/>
         <othMon2 netRealizedGain="0.00" netUnrealizedAppr="0.00"/>
         <othMon3 netRealizedGain="-644.95" netUnrealizedAppr="50359.56"/>
       </returnInfo>
       <mon1Flow redemption="0.00" reinvestment="N/A" sales="0.00"/>
-      <mon2Flow redemption="0.00" reinvestment="N/A" sales="0.00"/>
-      <mon3Flow redemption="0.00" reinvestment="N/A" sales="611272.00"/>
+      <mon2Flow redemption="0.00" reinvestment="N/A" sales="250000.00"/>
+      <mon3Flow redemption="0.00" reinvestment="N/A" sales="361272.00"/>
       <varInfo>
         <fundsDesignatedInfo>
           <nameDesignatedIndex>MSCI ACWI Index</nameDesignatedIndex>
@@ -85,8 +85,8 @@
         <balance>1</balance>
         <units>NC</units>
         <curCd>USD</curCd>
-        <valUSD>1321498.01</valUSD>
-        <pctVal>199.81</pctVal>
+        <valUSD>54238.29</valUSD>
+        <pctVal>8.20</pctVal>
         <payoffProfile>N/A</payoffProfile>
         <assetCat>DE</assetCat>
         <issuerConditional desc="N/A" issuerCat="OTHER"/>

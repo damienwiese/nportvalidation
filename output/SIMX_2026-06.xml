@@ -37,9 +37,9 @@
       <isFinalFiling>N</isFinalFiling>
     </genInfo>
     <fundInfo>
-      <totAssets>534472.42</totAssets>
-      <totLiabs>280229.42</totLiabs>
-      <netAssets>254243.00</netAssets>
+      <totAssets>254320.71</totAssets>
+      <totLiabs>78.05</totLiabs>
+      <netAssets>254242.66</netAssets>
       <assetsAttrMiscSec>0</assetsAttrMiscSec>
       <assetsInvested>0</assetsInvested>
       <amtPayOneYrBanksBorr>0</amtPayOneYrBanksBorr>
@@ -56,7 +56,7 @@
       <isNonCashCollateral>N</isNonCashCollateral>
       <returnInfo>
         <monthlyTotReturns>
-          <monthlyTotReturn classId="C000275538" rtn1="N/A" rtn2="N/A" rtn3="N/A"/>
+          <monthlyTotReturn classId="C000275538" rtn1="N/A" rtn2="N/A" rtn3="11.49"/>
         </monthlyTotReturns>
         <othMon1 netRealizedGain="0.00" netUnrealizedAppr="0.00"/>
         <othMon2 netRealizedGain="0.00" netUnrealizedAppr="0.00"/>
@@ -85,8 +85,8 @@
         <balance>1</balance>
         <units>NC</units>
         <curCd>USD</curCd>
-        <valUSD>509187.78</valUSD>
-        <pctVal>200.28</pctVal>
+        <valUSD>4068.25</valUSD>
+        <pctVal>1.60</pctVal>
         <payoffProfile>N/A</payoffProfile>
         <assetCat>DE</assetCat>
         <issuerConditional desc="N/A" issuerCat="OTHER"/>

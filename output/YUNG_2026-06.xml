@@ -37,9 +37,9 @@
       <isFinalFiling>N</isFinalFiling>
     </genInfo>
     <fundInfo>
-      <totAssets>1552050.50</totAssets>
-      <totLiabs>0.00</totLiabs>
-      <netAssets>1552050.50</netAssets>
+      <totAssets>1552388.49</totAssets>
+      <totLiabs>338.96</totLiabs>
+      <netAssets>1552049.53</netAssets>
       <assetsAttrMiscSec>0</assetsAttrMiscSec>
       <assetsInvested>0</assetsInvested>
       <amtPayOneYrBanksBorr>0</amtPayOneYrBanksBorr>
@@ -56,14 +56,14 @@
       <isNonCashCollateral>N</isNonCashCollateral>
       <returnInfo>
         <monthlyTotReturns>
-          <monthlyTotReturn classId="C000273180" rtn1="N/A" rtn2="2.90" rtn3="N/A"/>
+          <monthlyTotReturn classId="C000273180" rtn1="N/A" rtn2="2.90" rtn3="11.29"/>
         </monthlyTotReturns>
         <othMon1 netRealizedGain="0.00" netUnrealizedAppr="0.00"/>
         <othMon2 netRealizedGain="23.40" netUnrealizedAppr="48444.18"/>
         <othMon3 netRealizedGain="0.00" netUnrealizedAppr="98785.94"/>
       </returnInfo>
-      <mon1Flow redemption="0.00" reinvestment="N/A" sales="0.00"/>
-      <mon2Flow redemption="0.00" reinvestment="N/A" sales="1403068.00"/>
+      <mon1Flow redemption="0.00" reinvestment="N/A" sales="125000.00"/>
+      <mon2Flow redemption="0.00" reinvestment="N/A" sales="1278068.00"/>
       <mon3Flow redemption="0.00" reinvestment="N/A" sales="0.00"/>
       <varInfo>
         <fundsDesignatedInfo>

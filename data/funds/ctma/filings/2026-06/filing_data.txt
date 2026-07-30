@@ -10,9 +10,9 @@ isFinalFiling=N
 dateSigned=2026-07-31
 
 # Fund Financials
-totAssets=4866016.69
-totLiabs=177691.19
-netAssets=4688325.50
+totAssets=4688928.38
+totLiabs=597.71
+netAssets=4688330.67
 
 # Balance Sheet Items
 assetsAttrMiscSec=0
@@ -33,7 +33,7 @@ isNonCashCollateral=N
 # Returns (rtn1-3 from Bloomberg; gains from fund accounting)
 rtn1=N/A
 rtn2=1.27
-rtn3=N/A
+rtn3=-0.77
 netRealizedGainMon1=0.00
 netUnrealizedApprMon1=0.00
 netRealizedGainMon2=0.00
@@ -42,10 +42,10 @@ netRealizedGainMon3=-1286.37
 netUnrealizedApprMon3=-42194.66
 
 # Flows (from transfer agent / fund accounting)
-mon1Sales=0.00
+mon1Sales=125000.00
 mon1Redemption=0.00
 mon1Reinvestment=N/A
-mon2Sales=5156498.50
+mon2Sales=5031498.50
 mon2Redemption=0.00
 mon2Reinvestment=N/A
 mon3Sales=127986.50
@@ -57,6 +57,6 @@ nameDesignatedIndex=N/A
 indexIdentifier=N/A
 
 # B.3 Risk Metrics (Bloomberg durations × custodian market value)
-curMetricsJson=[{"curCd": "USD", "dv01_3month": "0.00", "dv100_3month": "0.00", "dv01_1year": "69.64", "dv100_1year": "6964.35", "dv01_5year": "0.00", "dv100_5year": "0.00", "dv01_10year": "0.00", "dv100_10year": "0.00", "dv01_30year": "0.00", "dv100_30year": "0.00"}]
-creditSprdRiskIgJson={"3month": "0.00", "1year": "69.49", "5year": "0.00", "10year": "0.00", "30year": "0.00"}
+curMetricsJson=[{"curCd": "USD", "dv01_3month": "0.00", "dv100_3month": "0.00", "dv01_1year": "68.50", "dv100_1year": "6850.10", "dv01_5year": "0.00", "dv100_5year": "0.00", "dv01_10year": "0.00", "dv100_10year": "0.00", "dv01_30year": "0.00", "dv100_30year": "0.00"}]
+creditSprdRiskIgJson={"3month": "0.00", "1year": "68.34", "5year": "0.00", "10year": "0.00", "30year": "0.00"}
 creditSprdRiskNonigJson={"3month": "0.00", "1year": "0.00", "5year": "0.00", "10year": "0.00", "30year": "0.00"}

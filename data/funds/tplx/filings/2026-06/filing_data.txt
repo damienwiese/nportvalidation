@@ -10,9 +10,9 @@ isFinalFiling=N
 dateSigned=2026-07-31
 
 # Fund Financials
-totAssets=537465.29
-totLiabs=276929.29
-netAssets=260536.00
+totAssets=260614.72
+totLiabs=78.90
+netAssets=260535.82
 
 # Balance Sheet Items
 assetsAttrMiscSec=0
@@ -33,7 +33,7 @@ isNonCashCollateral=N
 # Returns (rtn1-3 from Bloomberg; gains from fund accounting)
 rtn1=N/A
 rtn2=N/A
-rtn3=N/A
+rtn3=21.52
 netRealizedGainMon1=0.00
 netUnrealizedApprMon1=0.00
 netRealizedGainMon2=0.00

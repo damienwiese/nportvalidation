@@ -10,9 +10,9 @@ isFinalFiling=N
 dateSigned=2026-07-31
 
 # Fund Financials
-totAssets=4907668.10
-totLiabs=171025.10
-netAssets=4736643.00
+totAssets=4737253.34
+totLiabs=609.37
+netAssets=4736643.97
 
 # Balance Sheet Items
 assetsAttrMiscSec=0
@@ -33,7 +33,7 @@ isNonCashCollateral=N
 # Returns (rtn1-3 from Bloomberg; gains from fund accounting)
 rtn1=N/A
 rtn2=-1.12
-rtn3=N/A
+rtn3=-0.41
 netRealizedGainMon1=0.00
 netUnrealizedApprMon1=0.00
 netRealizedGainMon2=0.00
@@ -42,10 +42,10 @@ netRealizedGainMon3=-7543.28
 netUnrealizedApprMon3=-24414.77
 
 # Flows (from transfer agent / fund accounting)
-mon1Sales=0.00
+mon1Sales=125000.00
 mon1Redemption=0.00
 mon1Reinvestment=N/A
-mon2Sales=5167504.00
+mon2Sales=5042504.00
 mon2Redemption=0.00
 mon2Reinvestment=N/A
 mon3Sales=0.00
@@ -57,6 +57,6 @@ nameDesignatedIndex=MSCI EAFE Index
 indexIdentifier=MXEA
 
 # B.3 Risk Metrics (Bloomberg durations × custodian market value)
-curMetricsJson=[{"curCd": "USD", "dv01_3month": "0.00", "dv100_3month": "0.00", "dv01_1year": "60.08", "dv100_1year": "6007.98", "dv01_5year": "0.00", "dv100_5year": "0.00", "dv01_10year": "0.00", "dv100_10year": "0.00", "dv01_30year": "0.00", "dv100_30year": "0.00"}]
-creditSprdRiskIgJson={"3month": "0.00", "1year": "59.95", "5year": "0.00", "10year": "0.00", "30year": "0.00"}
+curMetricsJson=[{"curCd": "USD", "dv01_3month": "0.00", "dv100_3month": "0.00", "dv01_1year": "59.09", "dv100_1year": "5909.42", "dv01_5year": "0.00", "dv100_5year": "0.00", "dv01_10year": "0.00", "dv100_10year": "0.00", "dv01_30year": "0.00", "dv100_30year": "0.00"}]
+creditSprdRiskIgJson={"3month": "0.00", "1year": "58.96", "5year": "0.00", "10year": "0.00", "30year": "0.00"}
 creditSprdRiskNonigJson={"3month": "0.00", "1year": "0.00", "5year": "0.00", "10year": "0.00", "30year": "0.00"}

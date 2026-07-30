@@ -10,9 +10,9 @@ isFinalFiling=N
 dateSigned=2026-07-31
 
 # Fund Financials
-totAssets=5506974.00
-totLiabs=0.00
-netAssets=5506974.00
+totAssets=5507245.14
+totLiabs=265.28
+netAssets=5506979.86
 
 # Balance Sheet Items
 assetsAttrMiscSec=0
@@ -33,7 +33,7 @@ isNonCashCollateral=N
 # Returns (rtn1-3 from Bloomberg; gains from fund accounting)
 rtn1=N/A
 rtn2=N/A
-rtn3=N/A
+rtn3=0.02
 netRealizedGainMon1=0.00
 netUnrealizedApprMon1=0.00
 netRealizedGainMon2=0.00
@@ -45,10 +45,10 @@ netUnrealizedApprMon3=-8219.18
 mon1Sales=0.00
 mon1Redemption=0.00
 mon1Reinvestment=N/A
-mon2Sales=0.00
+mon2Sales=250000.00
 mon2Redemption=0.00
 mon2Reinvestment=N/A
-mon3Sales=5496632.00
+mon3Sales=5246632.00
 mon3Redemption=0.00
 mon3Reinvestment=N/A
 
@@ -57,6 +57,6 @@ nameDesignatedIndex=FTSE US High-Yield Market 0-5 Years 2% Capped Index
 indexIdentifier=CFIIH52C
 
 # B.3 Risk Metrics (Bloomberg durations × custodian market value)
-curMetricsJson=[{"curCd": "USD", "dv01_3month": "0.05", "dv100_3month": "4.83", "dv01_1year": "111.55", "dv100_1year": "11155.23", "dv01_5year": "1073.16", "dv100_5year": "107316.38", "dv01_10year": "0.00", "dv100_10year": "0.00", "dv01_30year": "29.96", "dv100_30year": "2995.66"}]
-creditSprdRiskIgJson={"3month": "0.00", "1year": "1.45", "5year": "93.00", "10year": "0.00", "30year": "0.00"}
-creditSprdRiskNonigJson={"3month": "0.04", "1year": "98.09", "5year": "893.77", "10year": "0.00", "30year": "29.96"}
+curMetricsJson=[{"curCd": "USD", "dv01_3month": "0.01", "dv100_3month": "0.80", "dv01_1year": "108.97", "dv100_1year": "10896.77", "dv01_5year": "1069.68", "dv100_5year": "106967.80", "dv01_10year": "0.00", "dv100_10year": "0.00", "dv01_30year": "29.84", "dv100_30year": "2983.53"}]
+creditSprdRiskIgJson={"3month": "0.00", "1year": "1.42", "5year": "92.05", "10year": "0.00", "30year": "0.00"}
+creditSprdRiskNonigJson={"3month": "0.00", "1year": "94.34", "5year": "881.79", "10year": "0.00", "30year": "29.84"}

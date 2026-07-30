@@ -37,9 +37,9 @@
       <isFinalFiling>N</isFinalFiling>
     </genInfo>
     <fundInfo>
-      <totAssets>11879494.56</totAssets>
-      <totLiabs>3195524.06</totLiabs>
-      <netAssets>8683970.50</netAssets>
+      <totAssets>8693282.57</totAssets>
+      <totLiabs>9319.20</totLiabs>
+      <netAssets>8683963.37</netAssets>
       <assetsAttrMiscSec>0</assetsAttrMiscSec>
       <assetsInvested>0</assetsInvested>
       <amtPayOneYrBanksBorr>0</amtPayOneYrBanksBorr>
@@ -56,14 +56,14 @@
       <isNonCashCollateral>N</isNonCashCollateral>
       <returnInfo>
         <monthlyTotReturns>
-          <monthlyTotReturn classId="C000273194" rtn1="N/A" rtn2="3.11" rtn3="N/A"/>
+          <monthlyTotReturn classId="C000273194" rtn1="N/A" rtn2="3.11" rtn3="-8.73"/>
         </monthlyTotReturns>
         <othMon1 netRealizedGain="0.00" netUnrealizedAppr="0.00"/>
         <othMon2 netRealizedGain="9654.55" netUnrealizedAppr="70831.31"/>
         <othMon3 netRealizedGain="-3631.23" netUnrealizedAppr="-512507.24"/>
       </returnInfo>
-      <mon1Flow redemption="0.00" reinvestment="N/A" sales="0.00"/>
-      <mon2Flow redemption="0.00" reinvestment="N/A" sales="2294757.00"/>
+      <mon1Flow redemption="0.00" reinvestment="N/A" sales="125000.00"/>
+      <mon2Flow redemption="0.00" reinvestment="N/A" sales="2169757.00"/>
       <mon3Flow redemption="0.00" reinvestment="N/A" sales="6815911.00"/>
       <varInfo>
         <fundsDesignatedInfo>
@@ -85,8 +85,8 @@
         <balance>1</balance>
         <units>NC</units>
         <curCd>USD</curCd>
-        <valUSD>838709.41</valUSD>
-        <pctVal>9.66</pctVal>
+        <valUSD>-54651.54</valUSD>
+        <pctVal>-0.63</pctVal>
         <payoffProfile>N/A</payoffProfile>
         <assetCat>DE</assetCat>
         <issuerConditional desc="N/A" issuerCat="OTHER"/>
@@ -145,8 +145,8 @@
         <balance>1</balance>
         <units>NC</units>
         <curCd>USD</curCd>
-        <valUSD>476505.18</valUSD>
-        <pctVal>5.49</pctVal>
+        <valUSD>-33192.09</valUSD>
+        <pctVal>-0.38</pctVal>
         <payoffProfile>N/A</payoffProfile>
         <assetCat>DE</assetCat>
         <issuerConditional desc="N/A" issuerCat="OTHER"/>
@@ -205,8 +205,8 @@
         <balance>1</balance>
         <units>NC</units>
         <curCd>USD</curCd>
-        <valUSD>874550.72</valUSD>
-        <pctVal>10.07</pctVal>
+        <valUSD>-2681.45</valUSD>
+        <pctVal>-0.03</pctVal>
         <payoffProfile>N/A</payoffProfile>
         <assetCat>DE</assetCat>
         <issuerConditional desc="N/A" issuerCat="OTHER"/>
@@ -265,8 +265,8 @@
         <balance>1</balance>
         <units>NC</units>
         <curCd>USD</curCd>
-        <valUSD>275488.98</valUSD>
-        <pctVal>3.17</pctVal>
+        <valUSD>-12970.95</valUSD>
+        <pctVal>-0.15</pctVal>
         <payoffProfile>N/A</payoffProfile>
         <assetCat>DE</assetCat>
         <issuerConditional desc="N/A" issuerCat="OTHER"/>
@@ -325,8 +325,8 @@
         <balance>1</balance>
         <units>NC</units>
         <curCd>USD</curCd>
-        <valUSD>560981.10</valUSD>
-        <pctVal>6.46</pctVal>
+        <valUSD>-66723.03</valUSD>
+        <pctVal>-0.77</pctVal>
         <payoffProfile>N/A</payoffProfile>
         <assetCat>DE</assetCat>
         <issuerConditional desc="N/A" issuerCat="OTHER"/>
@@ -385,8 +385,8 @@
         <balance>1</balance>
         <units>NC</units>
         <curCd>USD</curCd>
-        <valUSD>954006.00</valUSD>
-        <pctVal>10.99</pctVal>
+        <valUSD>-32803.25</valUSD>
+        <pctVal>-0.38</pctVal>
         <payoffProfile>N/A</payoffProfile>
         <assetCat>DE</assetCat>
         <issuerConditional desc="N/A" issuerCat="OTHER"/>
@@ -445,8 +445,8 @@
         <balance>1</balance>
         <units>NC</units>
         <curCd>USD</curCd>
-        <valUSD>259491.23</valUSD>
-        <pctVal>2.99</pctVal>
+        <valUSD>-12189.34</valUSD>
+        <pctVal>-0.14</pctVal>
         <payoffProfile>N/A</payoffProfile>
         <assetCat>DE</assetCat>
         <issuerConditional desc="N/A" issuerCat="OTHER"/>

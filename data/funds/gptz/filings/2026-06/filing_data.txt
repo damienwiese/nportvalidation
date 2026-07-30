@@ -34,22 +34,22 @@ isNonCashCollateral=N
 rtn1=N/A
 rtn2=N/A
 rtn3=N/A
-netRealizedGainMon1=N/A
-netUnrealizedApprMon1=N/A
-netRealizedGainMon2=N/A
-netUnrealizedApprMon2=N/A
-netRealizedGainMon3=N/A
-netUnrealizedApprMon3=N/A
+netRealizedGainMon1=0.00
+netUnrealizedApprMon1=0.00
+netRealizedGainMon2=0.00
+netUnrealizedApprMon2=0.00
+netRealizedGainMon3=0.00
+netUnrealizedApprMon3=0.00
 
 # Flows (from transfer agent / fund accounting)
-mon1Sales=0
-mon1Redemption=0
+mon1Sales=125000.00
+mon1Redemption=0.00
 mon1Reinvestment=N/A
-mon2Sales=0
-mon2Redemption=0
+mon2Sales=0.00
+mon2Redemption=0.00
 mon2Reinvestment=N/A
-mon3Sales=0
-mon3Redemption=0
+mon3Sales=0.00
+mon3Redemption=0.00
 mon3Reinvestment=N/A
 
 # Designated Index

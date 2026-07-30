@@ -37,9 +37,9 @@
       <isFinalFiling>N</isFinalFiling>
     </genInfo>
     <fundInfo>
-      <totAssets>15845049.15</totAssets>
-      <totLiabs>2340.65</totLiabs>
-      <netAssets>15842708.50</netAssets>
+      <totAssets>15845142.16</totAssets>
+      <totLiabs>2440.07</totLiabs>
+      <netAssets>15842702.09</netAssets>
       <assetsAttrMiscSec>0</assetsAttrMiscSec>
       <assetsInvested>0</assetsInvested>
       <amtPayOneYrBanksBorr>0</amtPayOneYrBanksBorr>
@@ -56,14 +56,14 @@
       <isNonCashCollateral>N</isNonCashCollateral>
       <returnInfo>
         <monthlyTotReturns>
-          <monthlyTotReturn classId="C000273184" rtn1="N/A" rtn2="22.88" rtn3="N/A"/>
+          <monthlyTotReturn classId="C000273184" rtn1="N/A" rtn2="22.88" rtn3="-6.67"/>
         </monthlyTotReturns>
         <othMon1 netRealizedGain="0.00" netUnrealizedAppr="0.00"/>
         <othMon2 netRealizedGain="0.00" netUnrealizedAppr="749259.68"/>
         <othMon3 netRealizedGain="-70957.76" netUnrealizedAppr="-348713.56"/>
       </returnInfo>
-      <mon1Flow redemption="0.00" reinvestment="N/A" sales="0.00"/>
-      <mon2Flow redemption="0.00" reinvestment="N/A" sales="7884070.00"/>
+      <mon1Flow redemption="0.00" reinvestment="N/A" sales="125000.00"/>
+      <mon2Flow redemption="0.00" reinvestment="N/A" sales="7759070.00"/>
       <mon3Flow redemption="0.00" reinvestment="N/A" sales="7630580.00"/>
       <varInfo>
         <fundsDesignatedInfo>
@@ -209,7 +209,7 @@
         <title>Honeywell International Inc</title>
         <cusip>438516106</cusip>
         <identifiers>
-          <isin value="US4385161066"/>
+          <isin value="US4385162056"/>
           <ticker value="HON"/>
         </identifiers>
         <balance>2929.00000000</balance>

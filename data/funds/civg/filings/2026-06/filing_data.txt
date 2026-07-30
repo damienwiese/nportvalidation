@@ -10,9 +10,9 @@ isFinalFiling=N
 dateSigned=2026-07-31
 
 # Fund Financials
-totAssets=4258415.00
-totLiabs=0.00
-netAssets=4258415.00
+totAssets=4258506.38
+totLiabs=94.21
+netAssets=4258412.17
 
 # Balance Sheet Items
 assetsAttrMiscSec=0
@@ -33,7 +33,7 @@ isNonCashCollateral=N
 # Returns (rtn1-3 from Bloomberg; gains from fund accounting)
 rtn1=N/A
 rtn2=N/A
-rtn3=N/A
+rtn3=0.27
 netRealizedGainMon1=0.00
 netUnrealizedApprMon1=0.00
 netRealizedGainMon2=0.00
@@ -45,10 +45,10 @@ netUnrealizedApprMon3=-3861.87
 mon1Sales=0.00
 mon1Redemption=0.00
 mon1Reinvestment=N/A
-mon2Sales=0.00
+mon2Sales=250000.00
 mon2Redemption=0.00
 mon2Reinvestment=N/A
-mon3Sales=4253878.00
+mon3Sales=4003878.00
 mon3Redemption=0.00
 mon3Reinvestment=N/A
 
@@ -57,6 +57,6 @@ nameDesignatedIndex=FTSE US Broad Investment-Grade Corporate Bond 1-5 Years Inde
 indexIdentifier=SBUSC15U
 
 # B.3 Risk Metrics (Bloomberg durations × custodian market value)
-curMetricsJson=[{"curCd": "USD", "dv01_3month": "0.00", "dv100_3month": "0.00", "dv01_1year": "137.82", "dv100_1year": "13781.92", "dv01_5year": "997.19", "dv100_5year": "99719.17", "dv01_10year": "5.73", "dv100_10year": "573.15", "dv01_30year": "6.48", "dv100_30year": "647.98"}]
-creditSprdRiskIgJson={"3month": "0.00", "1year": "136.21", "5year": "991.19", "10year": "5.73", "30year": "6.48"}
+curMetricsJson=[{"curCd": "USD", "dv01_3month": "0.00", "dv100_3month": "0.00", "dv01_1year": "136.61", "dv100_1year": "13660.60", "dv01_5year": "993.05", "dv100_5year": "99304.89", "dv01_10year": "5.70", "dv100_10year": "570.32", "dv01_30year": "6.45", "dv100_30year": "645.34"}]
+creditSprdRiskIgJson={"3month": "0.00", "1year": "135.03", "5year": "987.23", "10year": "5.70", "30year": "6.45"}
 creditSprdRiskNonigJson={"3month": "0.00", "1year": "0.00", "5year": "0.00", "10year": "0.00", "30year": "0.00"}

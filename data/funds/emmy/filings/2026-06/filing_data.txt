@@ -10,9 +10,9 @@ isFinalFiling=N
 dateSigned=2026-07-31
 
 # Fund Financials
-totAssets=5697902.25
-totLiabs=529193.25
-netAssets=5168709.00
+totAssets=5169328.64
+totLiabs=617.63
+netAssets=5168711.01
 
 # Balance Sheet Items
 assetsAttrMiscSec=0
@@ -33,7 +33,7 @@ isNonCashCollateral=N
 # Returns (rtn1-3 from Bloomberg; gains from fund accounting)
 rtn1=N/A
 rtn2=-1.44
-rtn3=N/A
+rtn3=-1.03
 netRealizedGainMon1=0.00
 netUnrealizedApprMon1=0.00
 netRealizedGainMon2=-15989.39
@@ -42,14 +42,14 @@ netRealizedGainMon3=-15534.69
 netUnrealizedApprMon3=-51223.32
 
 # Flows (from transfer agent / fund accounting)
-mon1Sales=0.00
+mon1Sales=125000.00
 mon1Redemption=0.00
 mon1Reinvestment=N/A
-mon2Sales=6290660.00
-mon2Redemption=1380931.00
+mon2Sales=6165660.00
+mon2Redemption=1006828.00
 mon2Reinvestment=N/A
 mon3Sales=1492246.00
-mon3Redemption=1122700.50
+mon3Redemption=1496803.50
 mon3Reinvestment=N/A
 
 # Designated Index
@@ -57,6 +57,6 @@ nameDesignatedIndex=MSCI Emerging Markets Index
 indexIdentifier=MXEF
 
 # B.3 Risk Metrics (Bloomberg durations × custodian market value)
-curMetricsJson=[{"curCd": "USD", "dv01_3month": "0.00", "dv100_3month": "0.00", "dv01_1year": "59.34", "dv100_1year": "5934.41", "dv01_5year": "0.00", "dv100_5year": "0.00", "dv01_10year": "0.00", "dv100_10year": "0.00", "dv01_30year": "0.00", "dv100_30year": "0.00"}]
-creditSprdRiskIgJson={"3month": "0.00", "1year": "59.22", "5year": "0.00", "10year": "0.00", "30year": "0.00"}
+curMetricsJson=[{"curCd": "USD", "dv01_3month": "0.00", "dv100_3month": "0.00", "dv01_1year": "58.37", "dv100_1year": "5837.06", "dv01_5year": "0.00", "dv100_5year": "0.00", "dv01_10year": "0.00", "dv100_10year": "0.00", "dv01_30year": "0.00", "dv100_30year": "0.00"}]
+creditSprdRiskIgJson={"3month": "0.00", "1year": "58.24", "5year": "0.00", "10year": "0.00", "30year": "0.00"}
 creditSprdRiskNonigJson={"3month": "0.00", "1year": "0.00", "5year": "0.00", "10year": "0.00", "30year": "0.00"}

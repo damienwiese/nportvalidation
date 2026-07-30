@@ -37,9 +37,9 @@
       <isFinalFiling>N</isFinalFiling>
     </genInfo>
     <fundInfo>
-      <totAssets>5506974.00</totAssets>
-      <totLiabs>0.00</totLiabs>
-      <netAssets>5506974.00</netAssets>
+      <totAssets>5507245.14</totAssets>
+      <totLiabs>265.28</totLiabs>
+      <netAssets>5506979.86</netAssets>
       <assetsAttrMiscSec>0</assetsAttrMiscSec>
       <assetsInvested>0</assetsInvested>
       <amtPayOneYrBanksBorr>0</amtPayOneYrBanksBorr>
@@ -56,24 +56,24 @@
       <curMetrics>
         <curMetric>
           <curCd>USD</curCd>
-          <intrstRtRiskdv01 period3Mon="0.05" period1Yr="111.55" period5Yr="1073.16" period10Yr="0.00" period30Yr="29.96"/>
-          <intrstRtRiskdv100 period3Mon="4.83" period1Yr="11155.23" period5Yr="107316.38" period10Yr="0.00" period30Yr="2995.66"/>
+          <intrstRtRiskdv01 period3Mon="0.01" period1Yr="108.97" period5Yr="1069.68" period10Yr="0.00" period30Yr="29.84"/>
+          <intrstRtRiskdv100 period3Mon="0.80" period1Yr="10896.77" period5Yr="106967.80" period10Yr="0.00" period30Yr="2983.53"/>
         </curMetric>
       </curMetrics>
-      <creditSprdRiskInvstGrade period3Mon="0.00" period1Yr="1.45" period5Yr="93.00" period10Yr="0.00" period30Yr="0.00"/>
-      <creditSprdRiskNonInvstGrade period3Mon="0.04" period1Yr="98.09" period5Yr="893.77" period10Yr="0.00" period30Yr="29.96"/>
+      <creditSprdRiskInvstGrade period3Mon="0.00" period1Yr="1.42" period5Yr="92.05" period10Yr="0.00" period30Yr="0.00"/>
+      <creditSprdRiskNonInvstGrade period3Mon="0.00" period1Yr="94.34" period5Yr="881.79" period10Yr="0.00" period30Yr="29.84"/>
       <isNonCashCollateral>N</isNonCashCollateral>
       <returnInfo>
         <monthlyTotReturns>
-          <monthlyTotReturn classId="C000274892" rtn1="N/A" rtn2="N/A" rtn3="N/A"/>
+          <monthlyTotReturn classId="C000274892" rtn1="N/A" rtn2="N/A" rtn3="0.02"/>
         </monthlyTotReturns>
         <othMon1 netRealizedGain="0.00" netUnrealizedAppr="0.00"/>
         <othMon2 netRealizedGain="0.00" netUnrealizedAppr="0.00"/>
         <othMon3 netRealizedGain="-320.75" netUnrealizedAppr="-8219.18"/>
       </returnInfo>
       <mon1Flow redemption="0.00" reinvestment="N/A" sales="0.00"/>
-      <mon2Flow redemption="0.00" reinvestment="N/A" sales="0.00"/>
-      <mon3Flow redemption="0.00" reinvestment="N/A" sales="5496632.00"/>
+      <mon2Flow redemption="0.00" reinvestment="N/A" sales="250000.00"/>
+      <mon3Flow redemption="0.00" reinvestment="N/A" sales="5246632.00"/>
       <varInfo>
         <fundsDesignatedInfo>
           <nameDesignatedIndex>FTSE US High-Yield Market 0-5 Years 2% Capped Index</nameDesignatedIndex>
