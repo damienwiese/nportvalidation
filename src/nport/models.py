@@ -26,6 +26,18 @@ class FundConfig:
     signer_org: str
     signer_name: str
     signer_title: str
+    # Internally approved filing policy. Optional while legacy/test fixtures are
+    # migrated; the fund-level review workflow requires every value below.
+    fiscal_year_end_mmdd: str = ""
+    derivatives_regime_policy: str = ""
+    liquidity_required: str = ""
+    cash_b2f_required: str = ""
+    policy_effective_from: str = ""
+    policy_effective_to: str = ""
+    policy_approved_by: str = ""
+    policy_approved_at: str = ""
+    policy_source_ref: str = ""
+    required_sources: str = ""
 
 
 @dataclass
@@ -83,6 +95,18 @@ class FilingData:
     cur_metrics_json: str = ""
     credit_sprd_risk_ig_json: str = ""
     credit_sprd_risk_nonig_json: str = ""
+    # Optional schema sections. Empty means the section is not applicable;
+    # applicability is enforced by the in-house fund policy/preflight gate.
+    cash_not_reported_in_c_or_d: str = ""
+    monthly_return_categories_json: str = ""
+    derivatives_regime: str = ""
+    deriv_exposure_pct: str = ""
+    deriv_currency_exposure_pct: str = ""
+    deriv_interest_rate_exposure_pct: str = ""
+    deriv_days_in_excess: str = ""
+    median_daily_var_pct: str = ""
+    median_var_ratio_pct: str = ""
+    backtesting_exceptions: str = ""
 
 
 @dataclass
@@ -180,3 +204,7 @@ class Holding:
     payoff_prof_deriv: str = ""  # payOffProf element for futures/forwards
     # Other derivatives
     other_deriv_desc: str = ""  # othDesc attribute on othDeriv element
+    # C.7. Either "N/A" or a JSON list such as
+    # [{"category":"Highly Liquid Investment","pct":"100"}].
+    liquidity_classification_json: str = ""
+    liquidity_circumstances_json: str = ""

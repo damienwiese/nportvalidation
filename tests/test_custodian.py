@@ -774,8 +774,8 @@ class TestIngestAccount:
 
 
 class TestIngestCLI:
-    def test_dry_run(self, tmp_path, capsys):
-        """CLI --dry-run transforms without writing XML."""
+    def test_custodian_is_blocked_even_in_dry_run(self, tmp_path, capsys):
+        """A prohibited custodian file cannot enter through the TEST/dry-run path."""
         from nport.cli import main
 
         # Write custodian CSV
@@ -792,20 +792,20 @@ class TestIngestCLI:
             "First Amer Govt Oblg,549300R5MYM6VZF1RM44,First American Govt Obligations Fd,31846V336,US31846V3362,FGXXX,US,STIV,RF\n"
         )
 
-        main([
-            "ingest",
-            "--custodian", str(csv_path),
-            "--fund-dir", str(fund_dir),
-            "--period", "2026-06",
-            "--account", "FDRS",
-            "--dry-run",
-        ])
+        with pytest.raises(SystemExit):
+            main([
+                "ingest",
+                "--custodian", str(csv_path),
+                "--fund-dir", str(fund_dir),
+                "--period", "2026-06",
+                "--account", "FDRS",
+                "--dry-run",
+            ])
         captured = capsys.readouterr()
-        assert "DRY RUN" in captured.out
-        assert "2 holdings" in captured.out
+        assert "--custodian is prohibited" in captured.err
 
-    def test_no_rows_for_account(self, tmp_path, capsys):
-        """CLI exits with error when account has no rows."""
+    def test_custodian_is_rejected_before_account_processing(self, tmp_path, capsys):
+        """Source boundary is checked before prohibited rows can be inspected."""
         from nport.cli import main
 
         csv_path = _write_csv(tmp_path, [_EQUITY_ROW])
@@ -822,7 +822,7 @@ class TestIngestCLI:
                 "--account", "ZZZZ",
             ])
         captured = capsys.readouterr()
-        assert "No rows for account" in captured.err
+        assert "--custodian is prohibited" in captured.err
 
 
 # ── TestGenerateFilingTemplate ─────────────────────────────────
@@ -987,53 +987,19 @@ class TestGenerateFilingTemplate:
 
 
 class TestNewFilingCLI:
-    def test_creates_template(self, tmp_path, capsys):
-        """CLI creates a filing template for a single fund."""
+    def test_command_is_blocked_without_authenticated_internal_input(self, tmp_path, capsys):
+        """The carry-forward writer cannot create unprovenanced canonical data."""
         from nport.cli import main
 
         fund_dir = tmp_path / "cmay"
         fund_dir.mkdir()
         (fund_dir / "fund_config.txt").touch()
 
-        main(["new-filing", "--period", "2026-07", "--fund-dir", str(fund_dir)])
-
+        with pytest.raises(SystemExit):
+            main(["new-filing", "--period", "2026-07", "--fund-dir", str(fund_dir)])
         captured = capsys.readouterr()
-        assert "created" in captured.out
-        assert (fund_dir / "filings" / "2026-07" / "filing_data.txt").exists()
-
-    def test_skips_existing(self, tmp_path, capsys):
-        """CLI skips when filing already exists."""
-        from nport.cli import main
-
-        fund_dir = tmp_path / "cmay"
-        target_dir = fund_dir / "filings" / "2026-07"
-        target_dir.mkdir(parents=True)
-        (fund_dir / "fund_config.txt").touch()
-        (target_dir / "filing_data.txt").write_text("existing\n")
-
-        main(["new-filing", "--period", "2026-07", "--fund-dir", str(fund_dir)])
-
-        captured = capsys.readouterr()
-        assert "already exists" in captured.out
-        assert (target_dir / "filing_data.txt").read_text() == "existing\n"
-
-    def test_all_funds(self, tmp_path, capsys):
-        """CLI processes all fund subdirs in a parent directory."""
-        from nport.cli import main
-
-        parent = tmp_path / "funds"
-        for name in ("aaa", "bbb"):
-            d = parent / name
-            d.mkdir(parents=True)
-            (d / "fund_config.txt").touch()
-
-        main(["new-filing", "--period", "2026-07", "--fund-dir", str(parent)])
-
-        captured = capsys.readouterr()
-        assert "aaa" in captured.out
-        assert "bbb" in captured.out
-        assert (parent / "aaa" / "filings" / "2026-07" / "filing_data.txt").exists()
-        assert (parent / "bbb" / "filings" / "2026-07" / "filing_data.txt").exists()
+        assert "cannot authenticate" in captured.err
+        assert not (fund_dir / "filings" / "2026-07" / "filing_data.txt").exists()
 
 
 # ── TestGuideCLI ───────────────────────────────────────────────
@@ -1045,7 +1011,6 @@ class TestGuideCLI:
 
         main(["guide"])
         captured = capsys.readouterr()
-        assert "N-PORT Monthly Filing" in captured.out
-        assert "nport masters" in captured.out
-        assert "nport split" in captured.out
+        assert "Independent N-PORT Filing" in captured.out
+        assert "U.S. Bank" in captured.out
         assert "nport build" in captured.out

@@ -1,5 +1,8 @@
 """CLI integration tests."""
 
+import hashlib
+import shutil
+
 import pytest
 
 import nport.cli as climod
@@ -36,13 +39,41 @@ def _fdrs_paths(fdrs_dir):
     }
 
 
+def _evidence_args(tmp_path, holdings_path):
+    registry = tmp_path / "registry.csv"
+    registry.write_text(
+        "ticker,fiscal_year_end_mmdd,derivatives_regime,liquidity_required,"
+        "cash_b2f_required,active_from,active_to,approved_by,approved_at,"
+        "source_system,source_ref,required_sources\n"
+        "FDRS,12-31,NONE,N,N,2025-01-01,,Compliance,2025-01-02T00:00:00Z,"
+        "Internal Test Governance,TEST-1,canonical_holdings\n",
+        encoding="utf-8",
+    )
+    # Source evidence must not point at the repository's existing canonical
+    # files; those are deliberately quarantined. This copied fixture stands in
+    # for an independently delivered test input.
+    independent_source = tmp_path / "independent_positions_fixture.csv"
+    shutil.copyfile(holdings_path, independent_source)
+    digest = hashlib.sha256(independent_source.read_bytes()).hexdigest()
+    manifest = tmp_path / "sources.csv"
+    manifest.write_text(
+        "dataset,source_system,source_path,as_of,acquired_at,sha256,record_count,approved_by\n"
+        f"canonical_holdings,Synthetic Test Input,{independent_source},2025-12-31,"
+        f"2026-01-01T00:00:00Z,{digest},54,Test Reviewer\n",
+        encoding="utf-8",
+    )
+    return ["--account", "FDRS", "--registry", str(registry),
+            "--source-manifest", str(manifest)]
+
+
 class TestGenerate:
     def test_succeeds(self, fdrs_dir, tmp_path):
         p = _fdrs_paths(fdrs_dir)
         out = tmp_path / "out.xml"
         main(["generate", "--config", p["config"],
               "--filing", p["filing"], "--holdings", p["holdings"],
-              "--output", str(out), "--skip-schema-check"])
+              "--output", str(out), "--skip-schema-check",
+              *_evidence_args(tmp_path, fdrs_dir / "filings" / "2025-12" / "holdings.csv")])
         assert out.exists()
         assert "edgarSubmission" in out.read_text()
 
@@ -51,7 +82,8 @@ class TestGenerate:
         main(["generate", "--config", p["config"],
               "--filing", p["filing"], "--holdings", p["holdings"],
               "--output", str(tmp_path / "out.xml"),
-              "--skip-schema-check", "--verbose"])
+              "--skip-schema-check", "--verbose",
+              *_evidence_args(tmp_path, fdrs_dir / "filings" / "2025-12" / "holdings.csv")])
         assert "54 holdings" in capsys.readouterr().out
 
     def test_creates_parent_dirs(self, fdrs_dir, tmp_path):
@@ -59,7 +91,8 @@ class TestGenerate:
         out = tmp_path / "a" / "b" / "out.xml"
         main(["generate", "--config", p["config"],
               "--filing", p["filing"], "--holdings", p["holdings"],
-              "--output", str(out), "--skip-schema-check", "--skip-validation"])
+              "--output", str(out), "--skip-schema-check", "--skip-validation",
+              *_evidence_args(tmp_path, fdrs_dir / "filings" / "2025-12" / "holdings.csv")])
         assert out.exists()
 
     @pytest.mark.parametrize("missing", ["config", "filing", "holdings"])
@@ -69,7 +102,8 @@ class TestGenerate:
         with pytest.raises(SystemExit):
             main(["generate", "--config", paths["config"],
                   "--filing", paths["filing"], "--holdings", paths["holdings"],
-                  "--output", str(tmp_path / "out.xml"), "--skip-schema-check"])
+                  "--output", str(tmp_path / "out.xml"), "--skip-schema-check",
+                  *_evidence_args(tmp_path, fdrs_dir / "filings" / "2025-12" / "holdings.csv")])
 
 
 class TestValidate:

@@ -1,10 +1,12 @@
-"""AP creation/redemption order book → per-fund monthly capital flows.
+"""AP creation/redemption order book → per-fund monthly flow cross-check.
 
 The issuer's authorized-participant order export (one row per CREATE/REDEEM order)
-is the source for N-PORT Part B.2 gross flows: ``monXSales`` = value of shares sold
-(creations), ``monXRedemption`` = value of shares redeemed. ``Notional`` is the
-per-order dollar value (in-kind and cash alike). Reinvestment (DRIP) is *not* in an
-order book and stays elsewhere.
+can calculate N-PORT-shaped Part B.2 gross flows: ``monXSales`` = value of shares sold
+(creations), ``monXRedemption`` = value of shares redeemed. In the current ``masters``
+pipeline these calculations are reconciliation-only: EagleSTAR Trial Balance flows
+write the filing, and the order values are compared with them in the reconciliation
+report. ``Notional`` is the per-order dollar value (in-kind and cash alike).
+Reinvestment (DRIP) is not in an order book.
 
 Aggregation is deterministic: sum ``Notional`` by fund × reporting month × side over
 ``ACCEPTED`` orders only. Months align with the filing master's reporting period

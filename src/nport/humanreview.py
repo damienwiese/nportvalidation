@@ -1,4 +1,8 @@
-"""Human-review workbook — the one sanctioned place a non-feed value enters a filing.
+"""Legacy human-review workbook schema.
+
+The current workbook is generated from U.S. Bank-derived masters and is not a
+production-safe input. Its CLI merge path is disabled until independent adapters,
+reviewer/timestamp/evidence columns, and immutable merge receipts are implemented.
 
 ``data/humanreview/<period>_review.xlsx``, one sheet per category. The pipeline surfaces
 two things here for a person to handle:
@@ -113,10 +117,14 @@ _SHEETS = [
     SheetSpec("swap_counterparties", ["code"], ["legalName", "lei"], ["legalName", "lei"]),
     SheetSpec("option_index", ["underlying"], ["indexName", "indexIdentifier"],
               ["indexName", "indexIdentifier"]),
+    # pmntFloatingRtSpread IS required: input_validation demands a number for it whenever
+    # pmntFixedOrFloating is Floating (which every TRS is), so leaving it optional here let
+    # a blank reach the build and fail it. A no-spread swap is an explicit "0", not a blank.
     SheetSpec("swap_legs", ["fund", "swapTicker"],
               ["recFixedOrFloating", "recDesc", "pmntFloatingRtIndex",
                "pmntFloatingRtSpread", "pmntRateTenor", "pmntRateUnit"],
-              ["recFixedOrFloating", "recDesc", "pmntFloatingRtIndex", "pmntRateTenor", "pmntRateUnit"]),
+              ["recFixedOrFloating", "recDesc", "pmntFloatingRtIndex",
+               "pmntFloatingRtSpread", "pmntRateTenor", "pmntRateUnit"]),
     SheetSpec("invCountry", ["fund", "ticker", "cusip", "name"], ["invCountry"], ["invCountry"]),
     # isin is optional enrichment — a missing ISIN is filed as other=CUSIP, so it is NOT a
     # blocking gap (required=[]).

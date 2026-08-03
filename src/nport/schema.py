@@ -122,6 +122,9 @@ _SPEC_DEFS: list[tuple[str, str, str, str, str, str]] = [
     ("payoff_prof_deriv", "forward", "conditional", "derivCat in FWD/FUT", "enum", "Long, Short, or N/A"),
     # ── other_deriv (1) ──
     ("other_deriv_desc", "other_deriv", "conditional", "derivCat==OTH", "str", "Other derivative description"),
+    # C.7 is policy-conditional and must originate in the internal liquidity program.
+    ("liquidity_classification_json", "liquidity", "conditional", "fund policy requires C.7", "json", "One to four liquidity categories, or N/A"),
+    ("liquidity_circumstances_json", "liquidity", "never", "", "json", "Up to three liquidity circumstances"),
 ]
 
 
@@ -210,6 +213,7 @@ def print_schema() -> None:
         "swap": "Swap Fields (C.11.f)",
         "forward": "Forward/Future Fields",
         "other_deriv": "Other Derivative Fields",
+        "liquidity": "Liquidity Classification Fields (C.7)",
     }
 
     header = f"{'CSV Column':<30} {'Field Name':<30} {'Type':<8} {'Required':<12} {'Description'}"

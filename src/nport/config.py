@@ -19,6 +19,16 @@ _CONFIG_KEY_MAP = {
     "seriesLei": "series_lei", "classId": "class_id",
     "signerOrg": "signer_org", "signerName": "signer_name",
     "signerTitle": "signer_title",
+    "fiscalYearEndMMDD": "fiscal_year_end_mmdd",
+    "derivativesRegimePolicy": "derivatives_regime_policy",
+    "liquidityRequired": "liquidity_required",
+    "cashB2fRequired": "cash_b2f_required",
+    "policyEffectiveFrom": "policy_effective_from",
+    "policyEffectiveTo": "policy_effective_to",
+    "policyApprovedBy": "policy_approved_by",
+    "policyApprovedAt": "policy_approved_at",
+    "policySourceRef": "policy_source_ref",
+    "requiredSources": "required_sources",
 }
 
 _FILING_KEY_MAP = {
@@ -60,6 +70,16 @@ _FILING_KEY_MAP = {
     "curMetricsJson": "cur_metrics_json",
     "creditSprdRiskIgJson": "credit_sprd_risk_ig_json",
     "creditSprdRiskNonigJson": "credit_sprd_risk_nonig_json",
+    "cashNotReportedInCOrD": "cash_not_reported_in_c_or_d",
+    "monthlyReturnCategoriesJson": "monthly_return_categories_json",
+    "derivativesRegime": "derivatives_regime",
+    "derivExposurePct": "deriv_exposure_pct",
+    "derivCurrencyExposurePct": "deriv_currency_exposure_pct",
+    "derivInterestRateExposurePct": "deriv_interest_rate_exposure_pct",
+    "derivDaysInExcess": "deriv_days_in_excess",
+    "medianDailyVarPct": "median_daily_var_pct",
+    "medianVarRatioPct": "median_var_ratio_pct",
+    "backtestingExceptions": "backtesting_exceptions",
 }
 
 _HOLDINGS_KEY_MAP = {
@@ -147,6 +167,8 @@ _HOLDINGS_KEY_MAP = {
     "payoffProfDeriv": "payoff_prof_deriv",
     # Other derivatives
     "otherDerivDesc": "other_deriv_desc",
+    "liquidityClassificationJson": "liquidity_classification_json",
+    "liquidityCircumstancesJson": "liquidity_circumstances_json",
 }
 
 _OPTIONAL_HOLDINGS_KEYS = {
@@ -168,13 +190,23 @@ _OPTIONAL_HOLDINGS_KEYS = {
     "pmnt_floating_rt_spread", "pmnt_pmnt_amt", "pmnt_cur_cd_leg",
     "pmnt_rate_tenor", "pmnt_rate_unit", "pmnt_reset_dt", "pmnt_reset_unit",
     "payoff_prof_deriv", "other_deriv_desc",
+    "liquidity_classification_json", "liquidity_circumstances_json",
 }
 
 _OPTIONAL_FILING_KEYS = {
     "cur_metrics_json", "credit_sprd_risk_ig_json", "credit_sprd_risk_nonig_json",
+    "cash_not_reported_in_c_or_d", "monthly_return_categories_json",
+    "derivatives_regime", "deriv_exposure_pct", "deriv_currency_exposure_pct",
+    "deriv_interest_rate_exposure_pct", "deriv_days_in_excess",
+    "median_daily_var_pct", "median_var_ratio_pct", "backtesting_exceptions",
 }
 
-_OPTIONAL_CONFIG_KEYS = {"reg_street2"}
+_OPTIONAL_CONFIG_KEYS = {
+    "reg_street2", "fiscal_year_end_mmdd", "derivatives_regime_policy",
+    "liquidity_required", "cash_b2f_required", "policy_effective_from",
+    "policy_effective_to", "policy_approved_by", "policy_approved_at",
+    "policy_source_ref", "required_sources",
+}
 
 
 def _parse_kv_file(path: Path) -> dict[str, str]:

@@ -1,0 +1,7 @@
+dataset,source_system,source_path,as_of,acquired_at,sha256,record_count,approved_by
+internal_positions,Internal OMS/IBOR Position Close,data/internal/positions/YYYY-MM-DD_positions.csv,YYYY-MM-DD,YYYY-MM-DDTHH:MM:SS-06:00,sha256-here,0,Operations Reviewer
+internal_fund_accounting,Internal General Ledger and NAV Close,data/internal/accounting/YYYY-MM-DD_fund_accounting.csv,YYYY-MM-DD,YYYY-MM-DDTHH:MM:SS-06:00,sha256-here,0,Fund Accounting Reviewer
+internal_create_redeem,Internal AP Order System,data/internal/orders/YYYY-MM-DD_create_redeem.csv,YYYY-MM-DD,YYYY-MM-DDTHH:MM:SS-06:00,sha256-here,0,Capital Markets Reviewer
+internal_security_reference,Approved Security Master and Market Data,data/internal/reference/YYYY-MM-DD_security_reference.csv,YYYY-MM-DD,YYYY-MM-DDTHH:MM:SS-06:00,sha256-here,0,Operations Reviewer
+internal_liquidity,Internal Liquidity Risk Classification,data/internal/risk/YYYY-MM-DD_liquidity.csv,YYYY-MM-DD,YYYY-MM-DDTHH:MM:SS-06:00,sha256-here,0,Liquidity Risk Reviewer
+internal_derivatives,Internal Trade Capture and Risk Results,data/internal/derivatives/YYYY-MM-DD_derivatives.csv,YYYY-MM-DD,YYYY-MM-DDTHH:MM:SS-06:00,sha256-here,0,Derivatives Risk Reviewer

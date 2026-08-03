@@ -51,7 +51,9 @@ class NportBuilder:
     def _build_header(self, root: etree._Element) -> None:
         header = SubElement(root, "headerData")
         SubElement(header, "submissionType").text = self.filing.submission_type
-        SubElement(header, "isConfidential").text = "false"
+        SubElement(header, "isConfidential").text = (
+            "true" if self.filing.submission_type in ("NPORT-NP", "NPORT-NP/A") else "false"
+        )
 
         filer_info = SubElement(header, "filerInfo")
 
@@ -132,6 +134,8 @@ class NportBuilder:
         SubElement(fi, "delayDeliv").text = f.delay_deliv
         SubElement(fi, "standByCommit").text = f.stand_by_commit
         SubElement(fi, "liquidPref").text = f.liquid_pref
+        if f.cash_not_reported_in_c_or_d:
+            SubElement(fi, "cshNotRptdInCorD").text = f.cash_not_reported_in_c_or_d
 
         # B.3 Risk metrics (optional, before isNonCashCollateral per XSD)
         if f.cur_metrics_json:
@@ -153,6 +157,8 @@ class NportBuilder:
                 "rtn3": f.rtn3,
             },
         )
+        if f.monthly_return_categories_json:
+            self._build_monthly_return_categories(ri, f.monthly_return_categories_json)
         SubElement(
             ri,
             "othMon1",
@@ -207,11 +213,67 @@ class NportBuilder:
             },
         )
 
-        # VaR info (varInfo block matches reference filing pattern)
-        var_info = SubElement(fi, "varInfo")
-        fdi = SubElement(var_info, "fundsDesignatedInfo")
-        SubElement(fdi, "nameDesignatedIndex").text = f.name_designated_index
-        SubElement(fdi, "indexIdentifier").text = f.index_identifier
+        # B.9 is applicable only to a limited derivatives user. Emit it only
+        # when the internally sourced data is complete.
+        if f.deriv_exposure_pct:
+            de = SubElement(fi, "derivExposureInfo")
+            SubElement(de, "derivExposurePct").text = f.deriv_exposure_pct
+            SubElement(de, "derivCurrencyExposurePct").text = f.deriv_currency_exposure_pct
+            SubElement(de, "derivIntRateExposurePct").text = f.deriv_interest_rate_exposure_pct
+            SubElement(de, "noOfBusinessDaysInExcess").text = f.deriv_days_in_excess
+
+        # B.10 is all-or-nothing. The former partial element was invalid XML
+        # and the validator incorrectly suppressed the resulting error.
+        if f.median_daily_var_pct:
+            var_info = SubElement(fi, "varInfo")
+            SubElement(var_info, "medianDailyVarPct").text = f.median_daily_var_pct
+            if f.derivatives_regime == "VAR_RELATIVE":
+                fdi = SubElement(var_info, "fundsDesignatedInfo")
+                SubElement(fdi, "nameDesignatedIndex").text = f.name_designated_index
+                SubElement(fdi, "indexIdentifier").text = f.index_identifier
+                SubElement(fdi, "medianVarRatioPct").text = f.median_var_ratio_pct
+            SubElement(var_info, "backtestingResults").text = f.backtesting_exceptions
+
+    _RETURN_CONTRACTS = (
+        "commodityContracts", "creditContracts", "equityContracts",
+        "foreignExchgContracts", "interestRtContracts", "otherContracts",
+    )
+    _RETURN_INSTRUMENTS = (
+        "forwardCategory", "futureCategory", "optionCategory", "swapCategory",
+        "swaptionCategory", "warrantCategory", "otherCategory",
+    )
+
+    def _build_monthly_return_categories(self, parent: etree._Element, raw: str) -> None:
+        """Emit typed B.5.c from an internal JSON calculation artifact."""
+        data = json.loads(raw)
+        unknown = set(data) - set(self._RETURN_CONTRACTS)
+        if unknown:
+            raise ValueError(f"Unknown B.5.c contract categories: {sorted(unknown)}")
+        cats = SubElement(parent, "monthlyReturnCats")
+        for contract in self._RETURN_CONTRACTS:
+            values = data.get(contract)
+            if not values:
+                continue
+            node = SubElement(cats, contract)
+            for month in ("mon1", "mon2", "mon3"):
+                self._add_monthly_gain(node, month, values.get(month))
+            instruments = [k for k in self._RETURN_INSTRUMENTS if values.get(k)]
+            if len(instruments) != 1:
+                raise ValueError(
+                    f"B.5.c {contract} requires exactly one instrument category; got {instruments}"
+                )
+            instrument = SubElement(node, instruments[0])
+            for month in ("instrMon1", "instrMon2", "instrMon3"):
+                self._add_monthly_gain(instrument, month, values[instruments[0]].get(month))
+
+    @staticmethod
+    def _add_monthly_gain(parent: etree._Element, name: str, value: dict | None) -> None:
+        if not isinstance(value, dict) or not {"netRealizedGain", "netUnrealizedAppr"} <= set(value):
+            raise ValueError(f"B.5.c {name} requires realized and unrealized values")
+        SubElement(parent, name, attrib={
+            "netRealizedGain": str(value["netRealizedGain"]),
+            "netUnrealizedAppr": str(value["netUnrealizedAppr"]),
+        })
 
     # XSD period attribute names for risk metrics
     _RISK_PERIODS = ["period3Mon", "period1Yr", "period5Yr", "period10Yr", "period30Yr"]
@@ -301,7 +363,9 @@ class NportBuilder:
 
         SubElement(sec, "valUSD").text = h.val_usd
         SubElement(sec, "pctVal").text = h.pct_val
-        SubElement(sec, "payoffProfile").text = h.payoff_profile
+        # Form N-PORT C.3 directs derivative holdings to answer N/A; their
+        # economic payoff is reported in C.11.
+        SubElement(sec, "payoffProfile").text = "N/A" if h.deriv_cat else h.payoff_profile
 
         # Asset category: assetConditional or assetCat
         if h.asset_conditional_desc:
@@ -323,6 +387,7 @@ class NportBuilder:
 
         SubElement(sec, "invCountry").text = h.inv_country
         SubElement(sec, "isRestrictedSec").text = h.is_restricted_sec
+        self._build_liquidity(sec, h)
         SubElement(sec, "fairValLevel").text = h.fair_val_level
 
         # Debt securities (C.9)
@@ -338,6 +403,35 @@ class NportBuilder:
         SubElement(sl, "isCashCollateral").text = h.is_cash_collateral
         SubElement(sl, "isNonCashCollateral").text = h.is_non_cash_collateral
         SubElement(sl, "isLoanByFund").text = h.is_loan_by_fund
+
+    @staticmethod
+    def _build_liquidity(sec: etree._Element, h: Holding) -> None:
+        """Emit C.7 only from the fund's internal liquidity-program output."""
+        raw = h.liquidity_classification_json.strip()
+        if not raw:
+            return
+        if raw == "N/A":
+            SubElement(sec, "fundCat").text = "N/A"
+            return
+        categories = json.loads(raw)
+        if not isinstance(categories, list) or not 1 <= len(categories) <= 4:
+            raise ValueError("C.7 requires one to four liquidity categories")
+        fund_cats = SubElement(sec, "fundCats")
+        seen = set()
+        for category in categories:
+            name = category.get("category")
+            if not name or name in seen or "pct" not in category:
+                raise ValueError("C.7 categories require unique category and pct values")
+            seen.add(name)
+            SubElement(fund_cats, "fundCat", attrib={
+                "category": str(name), "pct": str(category["pct"]),
+            })
+        if h.liquidity_circumstances_json:
+            circumstances = json.loads(h.liquidity_circumstances_json)
+            if not isinstance(circumstances, list) or len(circumstances) > 3:
+                raise ValueError("C.7 permits at most three circumstances")
+            for circumstance in circumstances:
+                SubElement(fund_cats, "circumstances").text = str(circumstance)
 
     # ── Debt Securities (C.9) ──────────────────────────────
 

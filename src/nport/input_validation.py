@@ -148,6 +148,44 @@ def validate_filing(
         # All monthly gain/flow fields are decimal-or-N/A in the XSD; N/A = no feed.
         _check_numeric(errors, getattr(filing, field), field, allow_na=True)
 
+    if filing.cash_not_reported_in_c_or_d:
+        _check_numeric(errors, filing.cash_not_reported_in_c_or_d, "cashNotReportedInCOrD")
+
+    b9 = (
+        filing.deriv_exposure_pct, filing.deriv_currency_exposure_pct,
+        filing.deriv_interest_rate_exposure_pct, filing.deriv_days_in_excess,
+    )
+    if any(b9) and not all(b9):
+        errors.append("B.9 derivatives exposure is partial; all four fields are required.")
+    for name, value in zip(
+        ("derivExposurePct", "derivCurrencyExposurePct", "derivInterestRateExposurePct"),
+        b9[:3],
+    ):
+        if value:
+            _check_numeric(errors, value, name, allow_na=True)
+    if filing.deriv_days_in_excess:
+        _check_numeric(errors, filing.deriv_days_in_excess, "derivDaysInExcess", allow_na=True)
+
+    if filing.derivatives_regime == "LIMITED" and not all(b9):
+        errors.append("B.9 is required when derivativesRegime=LIMITED.")
+    if filing.derivatives_regime in {"VAR_RELATIVE", "VAR_ABSOLUTE"}:
+        if not filing.median_daily_var_pct or not filing.backtesting_exceptions:
+            errors.append("B.10 requires medianDailyVarPct and backtestingExceptions for a VaR fund.")
+    if filing.derivatives_regime == "VAR_RELATIVE":
+        for name, value in (
+            ("nameDesignatedIndex", filing.name_designated_index),
+            ("indexIdentifier", filing.index_identifier),
+            ("medianVarRatioPct", filing.median_var_ratio_pct),
+        ):
+            if not value:
+                errors.append(f"B.10 relative VaR requires {name}.")
+    if filing.median_daily_var_pct:
+        _check_numeric(errors, filing.median_daily_var_pct, "medianDailyVarPct", allow_na=True)
+    if filing.median_var_ratio_pct:
+        _check_numeric(errors, filing.median_var_ratio_pct, "medianVarRatioPct", allow_na=True)
+    if filing.backtesting_exceptions:
+        _check_numeric(errors, filing.backtesting_exceptions, "backtestingExceptions", allow_na=True)
+
     # Cross-field checks (only if individual fields parsed OK)
     try:
         assets, liabs, net = float(filing.tot_assets), float(filing.tot_liabs), float(filing.net_assets)
@@ -161,14 +199,14 @@ def validate_filing(
         pass  # Individual field errors already reported above
 
     try:
-        pd_end = datetime.strptime(filing.rep_pd_end, "%Y-%m-%d").date()
+        pd_end = datetime.strptime(filing.rep_pd_date, "%Y-%m-%d").date()
         signed = datetime.strptime(filing.date_signed, "%Y-%m-%d").date()
         if signed < pd_end:
-            warnings.append(f"dateSigned ({filing.date_signed}) is before repPdEnd ({filing.rep_pd_end}).")
+            warnings.append(f"dateSigned ({filing.date_signed}) is before repPdDate ({filing.rep_pd_date}).")
         if (signed - pd_end).days > 90:
             warnings.append(f"dateSigned is {(signed - pd_end).days} days after repPdEnd — filings due within 60 days.")
         if pd_end > today:
-            warnings.append(f"repPdEnd ({filing.rep_pd_end}) is in the future.")
+            warnings.append(f"repPdDate ({filing.rep_pd_date}) is in the future.")
     except ValueError:
         pass
 
@@ -228,6 +266,8 @@ def validate_holding(holding: Holding, index: int, rep_pd_end: str = "") -> tupl
         if holding.counterparty_lei == "N/A":
             warnings.append(f"{p}/counterpartyLei: real counterparties should have LEIs.")
         _check_numeric(errors, holding.unrealized_appr, f"{p}/unrealizedAppr")
+        if holding.payoff_profile != "N/A":
+            warnings.append(f"{p}/payoffProfile: derivatives are emitted as N/A under C.3.")
 
         # Option-specific validation
         if holding.deriv_cat in ("OPT", "SWO", "WAR"):

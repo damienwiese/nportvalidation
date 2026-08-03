@@ -1,163 +1,62 @@
 # nport
 
-Generate SEC N-PORT XML filings from your US Bank custodian CSV + Bloomberg.
+Build SEC Form N-PORT XML from independently sourced, traceable canonical data.
 
-> Want the full picture (what every file means, the Bloomberg fields, a worked example)?
-> Read **[OVERVIEW.md](OVERVIEW.md)**. This page gets you from a blank machine to a filing.
+## Source boundary
 
----
+U.S. Bank custody exports, EagleSTAR attachments, prepared filings, email
+attachments, master workbooks, and every file derived from them are
+comparison-only. They cannot populate the in-house filing.
 
-## 1. Set up a new machine (once)
+The current repository contains historical comparison artifacts. Preserve them;
+do not promote or manually relabel them as internal data.
 
-You need **Python 3.11+** and **[uv](https://docs.astral.sh/uv/)** (the package manager). Pick your OS.
-
-### macOS
-
-```bash
-# 1. install uv
-curl -LsSf https://astral.sh/uv/install.sh | sh
-# (restart the terminal, or run: source $HOME/.local/bin/env)
-
-# 2. get the project + install dependencies
-git clone <repo-url> nport
-cd nport
-uv sync
-
-# 3. (optional) activate the venv so you can type `nport` instead of `uv run nport`
-source .venv/bin/activate
-```
-
-### Windows (PowerShell)
+## Current safe commands
 
 ```powershell
-# 1. install uv
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-# (close and reopen PowerShell so `uv` is on PATH)
-
-# 2. get the project + install dependencies
-git clone <repo-url> nport
-cd nport
-uv sync
-
-# 3. (optional) activate the venv so you can type `nport` instead of `uv run nport`
-.venv\Scripts\Activate.ps1
+nport prepare-review <fund> <period> --positions <independent_positions.csv> [--orders <independent_orders.csv>]
+nport review-status <fund> <period>
+nport finalize-review <fund> <period>
+nport build <fund> <period> --from-review
+nport compare-reference --internal <internal.xml> --reference <external-reference.xml>
 ```
 
-> If you skip step 3, just put `uv run` in front of every command (`uv run nport guide`).
+`<fund>` is any fund directory under `data/funds/`; FDRS is only an example.
+Review commands deliberately process one fund at a time because source evidence
+and approvals are fund-specific. For a full period, place each fund's independent
+files under `data/intake/<period>/<fund>/` and use the all-fund PowerShell loops in
+`docs/NPORT_Runbook.pdf`. Those loops prepare every workbook, stop and list blocked
+funds, and build every review-ready fund without using legacy canonical files.
 
-Check it works (same on both OSes):
+The complete monthly order is:
 
-```bash
-uv run pytest        # should report all tests passing
-nport guide          # prints the monthly checklist
-```
+1. `nport schema` - confirm the positions CSV contract.
+2. `nport prepare-review` - generate one workbook per fund.
+3. Human review - complete Sources, FundFields, HoldingFields, and Approvals.
+4. `nport review-status` - stop until every fund reports zero blockers.
+5. `nport build --from-review --dry-run` - validate without retaining output.
+6. `nport build --from-review` - write the clean bundle and XML.
+7. `nport compare-reference` - compare only after the independent build.
 
----
+The review workbook is written to
+`data/funds/<fund>/filings/<period>/human_review.xlsx`. It contains exact
+fund-field, holding-field, source-evidence, approval, and reconciliation
+locations. `finalize-review` writes a clean versioned bundle under
+`data/builds/<fund>/<period>/<run-id>/`; it does not overwrite the historical
+canonical files.
 
-## 2. File N-PORT — drop in 2 files, run 3 commands
+No separate `fund_registry.csv` is required by this workflow. Effective-dated
+policy is reviewed at fund level and written into the clean `fund_config.txt`.
+Known U.S. Bank/EagleSTAR identifiers and legacy landing paths are rejected.
 
-The period (e.g. `2026-06`) is **optional** everywhere — leave it off and the newest
-custodian file is used.
+## Status
 
-### Drop in your two source files
+The local review, evidence, approval, provenance, clean finalization, basic
+reconciliation, preflight, and build path are implemented. The code does not
+invent business values. A filing remains **BLOCKED** until its independent
+positions, accounting, policy, risk, liquidity, trade, and control evidence are
+actually supplied and approved.
 
-| Save it here | Where it comes from |
-|---|---|
-| `data/custodian/2026-06_holdings.csv` | US Bank — the monthly positions export (all funds) |
-| `data/orders/2026-06_orders.csv` | your AP order portal — creation/redemption order book *(optional; fills capital flows)* |
-
-The tool finds both by name — you never type the path.
-
-### Step 1 — Build the two workbooks
-
-```bash
-nport masters
-```
-
-Creates `data/master/security_master.xlsx` (holdings reference data) and
-`data/master/filing_master.xlsx` (returns, net assets, flows, risk).
-
-**Then open BOTH on the Bloomberg machine, let the `=BDP()` formulas calculate, and save**
-(keep them `.xlsx`). Bloomberg auto-fills stock LEI/ISIN/country, monthly returns, and bond
-durations; swap/option counterparties + LEIs are filled automatically. The only cells you
-type by hand are option `delta`, swap `notionalAmt`/`unrealizedAppr`, and the fund-accounting
-gains — enter those in the workbooks before saving. (See [OVERVIEW.md §3](OVERVIEW.md).)
-
-### Step 2 — Split the workbooks into per-fund files
-
-```bash
-nport split
-```
-
-Writes every fund's `security_master.csv` and `filing_data.txt` from the two workbooks.
-Edit the **workbooks**, not the per-fund files — `split` overwrites them.
-
-### Step 3 — Generate the XML
-
-```bash
-nport build            # every fund   → output/<TICKER>_2026-06.xml
-nport build fdrs       # just one fund
-nport build --dry-run  # validate everything, write nothing
-```
-
-### File it
-
-Review the XML in `output/`. When it's right, set `liveTestFlag=LIVE` (in the filing master
-before splitting, or in each `filing_data.txt`), run `nport build` again, and upload to EDGAR.
-
----
-
-## 3. Commands
-
-The three above are all you need monthly. Full list:
-
-| Command | What it does |
-|---|---|
-| `nport masters [period]` | **Step 1** — build both master workbooks from the custodian (+ AP orders). `--ap-orders PATH` to point at the order file; `--dry-run`. |
-| `nport split [period]` | **Step 2** — write every per-fund file from both workbooks. `--dry-run`. |
-| `nport build [fund] [period]` | **Step 3** — generate XML. No fund = all funds. `--dry-run`, `--verbose`. |
-| `nport validate <fund> [period]` | Validate a fund's inputs without generating. |
-| `nport guide` | Print the monthly checklist. |
-| `nport pull --ticker <T> --list` | List/download existing EDGAR filings (to compare). |
-| `nport --help` | Everything, including `(advanced)` low-level commands. |
-
-**Advanced / power-user** (you normally won't need these — `masters`/`split` wrap them):
-`build-master`, `split-master`, `build-filing-master`, `split-filing-master`, `generate`,
-`enrich`, `merge`, `new-filing`, `check-schema`, `schema`.
-
-Defaults that save typing: omit the period → newest custodian file; a bare fund name
-(`fdrs`) → `data/funds/fdrs`; the custodian/order paths are derived from the period.
-
----
-
-## 4. What's where
-
-```
-data/custodian/2026-06_holdings.csv   ← you drop in (US Bank, all funds)
-data/orders/2026-06_orders.csv        ← you drop in (AP order book, optional)
-
-data/master/security_master.xlsx      ← built by `masters`, you enrich on Bloomberg, read by `split`
-data/master/filing_master.xlsx        ← built by `masters`, you enrich on Bloomberg, read by `split`
-
-data/funds/fdrs/
-├── fund_config.txt                   ← fund identity (CIK, name, address, signer); set once
-├── security_master.csv               ← GENERATED by `split` (don't hand-edit)
-└── filings/2026-06/
-    ├── filing_data.txt               ← GENERATED by `split` (don't hand-edit)
-    ├── holdings.csv                  ← GENERATED by `build`
-    ├── debt_securities.csv           ← GENERATED (if the fund holds debt)
-    └── derivatives.csv               ← GENERATED (if the fund holds options/swaps)
-
-output/<TICKER>_2026-06.xml           ← the filing, written by `build`
-```
-
-- **You edit:** the two `.xlsx` workbooks (on Bloomberg) and `fund_config.txt` (once).
-- **The tool generates:** every per-fund file + the final XML. Don't hand-edit generated
-  files — change the workbook and re-`split`/`build`.
-
-## Tests
-
-```bash
-uv run pytest                    # all tests
-uv run pytest -k test_custodian  # one module
-```
+See `docs/NPORT_Runbook.pdf` for every accepted field and exact input location,
+and `docs/US_Bank_NPORT_Comprehensive_Final_Audit_2026-08-03.pdf` for the open
+gap register and remediation owners.

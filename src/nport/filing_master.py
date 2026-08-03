@@ -1,5 +1,8 @@
 """Per-period filing-data master workbook → per-fund filing_data.txt.
 
+COMPARISON-ONLY LEGACY ADAPTER. Its custody/EagleSTAR-derived writer and splitter
+are disabled and cannot supply the in-house filing.
+
 One row per fund. The Bloomberg-derivable fields (`rtn1-3`, the 3 reporting-period
 monthly total returns) are live ``=BDP(...)`` formulas; net/total assets come from the
 custodian; submission flags, period dates, and balance-sheet items are constants. The
@@ -260,6 +263,7 @@ def _write_risk_sheet(wb, custodian_rows: list) -> None:
 def build_filing_master(
     custodian_rows: list, period: str, path: Path,
     fund_acct: dict[str, dict[str, str]] | None = None,
+    registry_path: Path = Path("data/master/fund_registry.csv"),
 ) -> int:
     """Write the per-period filing master workbook. Returns the fund count.
 
@@ -280,6 +284,10 @@ def build_filing_master(
     signed = _signed_date(period)
 
     fund_acct = fund_acct or {}
+    registry = None
+    if registry_path.is_file():
+        from nport.policy import FundRegistry
+        registry = FundRegistry.from_csv(registry_path)
 
     by_acct: dict[str, list] = defaultdict(list)
     for r in custodian_rows:
@@ -304,6 +312,13 @@ def build_filing_master(
         rec.update(_CONST)
         rec["repPdEnd"] = end_date
         rec["repPdDate"] = end_date
+        if registry:
+            from nport.policy import derive_context
+            context = derive_context(registry, acct, period)
+            rec["submissionType"] = context.submission_type
+            rec["repPdEnd"] = context.fiscal_year_end.isoformat()
+            rec["repPdDate"] = context.report_date.isoformat()
+            rec["derivativesRegime"] = context.policy.derivatives_regime
         rec["dateSigned"] = signed
         rec["netAssets"] = f"{net:.2f}"
         rec["totLiabs"] = f"{liabs:.2f}"
@@ -432,7 +447,7 @@ _SECTIONS = [
 
 def _format_filing_data(rec: dict[str, str], period: str) -> str:
     lines = [f"# {rec.get('Account', '')} {period} filing data",
-             "# rtn1-3 from Bloomberg; net/total assets from custodian; gains/flows from fund accounting.",
+             "# rtn1-3 from Bloomberg; accounting fields/flows from EagleSTAR when available; custody is the fallback.",
              ""]
     for title, keys in _SECTIONS:
         lines.append(f"# {title}")

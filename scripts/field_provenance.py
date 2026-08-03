@@ -39,11 +39,11 @@ FUNDS = ROOT / "data" / "funds"
 PERIOD = "2026-06"
 
 # ── Owners ────────────────────────────────────────────────────────────────────
-CUST = "Custodian"
-BBG = "Bloomberg"
-EAG = "EagleSTAR"
-HUMAN = "Human review"
-APORD = "AP order book"
+CUST = "U.S. Bank custodian CSV"
+BBG = "Bloomberg workbook formula"
+EAG = "Gmail export - EagleSTAR attachment"
+HUMAN = "Human-review workbook (seeded; reviewer not recorded)"
+APORD = "Create/redeem order export"
 CONFIG = "fund_config.txt"
 MANUAL = "Manual (workbook)"
 TOOL = "Tool constant"
@@ -166,7 +166,7 @@ ROWS: list[tuple[str, str, str, str, str, str]] = [
     ("Option", "shareNo", TOOL, "N/A — index options are on an index, not a share count", "custodian.py", r'"share_no": "N/A"'),
     ("Option", "delta", MANUAL, "NO FEED. FLEX options do not price on Bloomberg. Typed into "
      "security_master.xlsx and preserved across rebuilds — from your risk system", "master_sheet.py", r"delta has no data feed"),
-    ("Option", "refIndexName / refIndexIdentifier", HUMAN, "option_index sheet → applied at split", "master_sheet.py", r'r\["refIndexName"\], r\["refIndexIdentifier"\] = idx'),
+    ("Option", "refIndexName / refIndexIdentifier", HUMAN, "option_index sheet; currently seeded from a legacy map and applied at split", "master_sheet.py", r'r\["refIndexName"\], r\["refIndexIdentifier"\] = idx'),
     ("Option", "counterpartyName / counterpartyLei", TOOL, "The Options Clearing Corporation — every listed/FLEX option clears through it", "custodian.py", r"^_OCC_NAME"),
 
     # ---- Derivatives: swaps --------------------------------------------------
@@ -174,9 +174,9 @@ ROWS: list[tuple[str, str, str, str, str, str]] = [
     ("Swap", "terminationDt", CUST, "Parsed from the swap ticker (…-TRS-<date>-…)", "custodian.py", r'"termination_dt": swap\.termination_dt'),
     ("Swap", "notionalAmt", CUST, "MarketValue = shares × price — the contract size", "custodian.py", r'"notional_amt"'),
     ("Swap", "unrealizedAppr", EAG, "PVal Total Unreal G/L Base, matched on Primary Asset ID", "eaglestar.py", r'"unrealizedAppr": f"\{_fnum'),
-    ("Swap", "counterpartyName / counterpartyLei", HUMAN, "swap_counterparties sheet — ticker code → legal name + GLEIF LEI", "master_sheet.py", r'r\["counterpartyName"\], r\["counterpartyLei"\] = cp'),
-    ("Swap", "recFixedOrFloating / recDesc", HUMAN, "swap_legs sheet — from the trade confirm", "master_sheet.py", r"leg_cols = \("),
-    ("Swap", "pmntFloatingRtIndex / pmntFloatingRtSpread / pmntRateTenor / pmntRateUnit", HUMAN, "swap_legs sheet — from the trade confirm", "master_sheet.py", r"leg_cols = \("),
+    ("Swap", "counterpartyName / counterpartyLei", HUMAN, "swap_counterparties sheet; currently seeded from the GLEIF legacy map", "master_sheet.py", r'r\["counterpartyName"\], r\["counterpartyLei"\] = cp'),
+    ("Swap", "recFixedOrFloating / recDesc", HUMAN, "swap_legs sheet; currently prefilled from the TRS template and reference issuer", "master_sheet.py", r"leg_cols = \("),
+    ("Swap", "pmntFloatingRtIndex / pmntFloatingRtSpread / pmntRateTenor / pmntRateUnit", HUMAN, "swap_legs sheet; index, tenor, and unit are template seeds; spread remains blank for trade-confirm review", "master_sheet.py", r"leg_cols = \("),
     ("Swap", "refCusip", CUST, "Leading segment of the swap ticker", "custodian.py", r'"ref_cusip": swap\.ref_cusip'),
     ("Swap", "refIsin / refTicker / refIssuerName / refIssueTitle", BBG, "=BDP(refCusip Equity, …) on the reference security", "master_sheet.py", r'"refIsin": \("ID_ISIN"'),
 
@@ -193,16 +193,39 @@ ROWS: list[tuple[str, str, str, str, str, str]] = [
     ("Gains (B.5)", "netRealizedGainMon1-3", EAG, "Trial Balance month-end deltas", "eaglestar.py", r'f"netRealizedGainMon\{i\}"'),
     ("Gains (B.5)", "netUnrealizedApprMon1-3", EAG, "Trial Balance month-end deltas", "eaglestar.py", r'f"netUnrealizedApprMon\{i\}"'),
     ("Flows (B.2)", "mon1-3Sales / mon1-3Redemption", EAG, "Trial Balance subscriptions/redemptions. AP order book cross-checks only", "eaglestar.py", r'f"\{mon\}Sales"'),
+    ("Flows (B.2)", "mon1-3Sales / mon1-3Redemption (reconciliation only)", APORD,
+     "ACCEPTED create/redeem Notional by month; compared with EagleSTAR but does not write the filing",
+     "cli.py", r"ap_flows = flows_from_csv"),
     ("Flows (B.2)", "mon1-3Reinvestment", TOOL, "NO FEED. Not in an order book — needs the transfer agent", "filing_master.py", r"^_NA_FIELDS"),
 
     # ---- Risk, index, admin --------------------------------------------------
     ("Risk (B.3)", "durAdj / spreadDur", BBG, "=BDP DUR_ADJ_MID / OAS_SPREAD_DUR_MID per debt holding", "filing_master.py", r"^_RISK_BDP_FIELDS"),
     ("Risk (B.3)", "maturity / ratingSP", BBG, "=BDP MATURITY / RTG_SP, bucketed by tenor", "filing_master.py", r"^_RISK_BDP_FIELDS"),
-    ("Index (B.6)", "nameDesignatedIndex / indexIdentifier", HUMAN, "designated_index sheet — from the prospectus", "humanreview.py", r"SEED_DESIGNATED_INDEX"),
+    ("Index (B.6)", "nameDesignatedIndex / indexIdentifier", HUMAN, "designated_index sheet; currently seeded from legacy 497K mappings", "humanreview.py", r"SEED_DESIGNATED_INDEX"),
     ("Admin", "submissionType / isFinalFiling / isNonCashCollateral", TOOL, "NPORT-P / N / N", "filing_master.py", r"^_CONST"),
     ("Admin", "liveTestFlag", TOOL, "TEST until you flip it; LIVE is gated on a clean reconciliation", "cli.py", r"def _live_gate_reasons"),
     ("Admin", "repPdEnd / repPdDate", "Derived", "Last calendar day of the filing period", "custodian.py", r"def _period_end_date"),
     ("Admin", "dateSigned", "Derived", "Set from the period; override in the workbook", "filing_master.py", r"def _signed_date"),
+
+    # ---- Newly supported conditional sections ------------------------------
+    ("Conditional sections", "cashNotReportedInCOrD (B.2.f)", MANUAL,
+     "NO FEED. Field exists and preflight blocks it when policy requires it",
+     "preflight.py", r"context\.policy\.cash_b2f_required"),
+    ("Conditional sections", "monthlyReturnCategoriesJson (B.5.c)", MANUAL,
+     "NO FEED. Typed field; no Gmail, custodian, create/redeem, or Bloomberg writer exists",
+     "models.py", r"monthly_return_categories_json"),
+    ("Conditional sections", "derivativesRegime", "Derived",
+     "From the approved fund registry; the production registry is currently absent",
+     "policy.py", r"derivatives_regime=context\.policy\.derivatives_regime"),
+    ("Conditional sections", "derivExposurePct / derivCurrencyExposurePct / derivInterestRateExposurePct / derivDaysInExcess (B.9)", MANUAL,
+     "NO FEED. Required only for a registry-approved LIMITED fund",
+     "preflight.py", r"regime == \"LIMITED\""),
+    ("Conditional sections", "medianDailyVarPct / medianVarRatioPct / backtestingExceptions (B.10)", MANUAL,
+     "NO FEED. Required only for the applicable registry-approved VaR regime",
+     "preflight.py", r"regime\.startswith\(\"VAR_\"\)"),
+    ("Conditional sections", "liquidityClassificationJson / liquidityCircumstancesJson (C.7)", MANUAL,
+     "NO FEED. Position-level liquidity data is absent; preflight blocks when policy requires C.7",
+     "preflight.py", r"context\.policy\.liquidity_required"),
 ]
 
 
@@ -253,6 +276,12 @@ def verify() -> list[str]:
 
     # Nothing in the filing master may be left unaccounted for.
     covered = {f for _g, fields, *_ in ROWS for f in re.split(r"\s*/\s*", fields)}
+    covered |= {
+        "cashNotReportedInCOrD", "monthlyReturnCategoriesJson", "derivativesRegime",
+        "derivExposurePct", "derivCurrencyExposurePct", "derivInterestRateExposurePct",
+        "derivDaysInExcess", "medianDailyVarPct", "medianVarRatioPct",
+        "backtestingExceptions",
+    }
     from nport.filing_master import HEADER
     unmapped = [c for c in HEADER
                 if c not in covered and c not in ("Account", "bbgid")
@@ -337,8 +366,9 @@ def main() -> None:
     fragment = "\n".join(out)
 
     # Splice into the runbook between the markers (idempotent — safe to re-run).
-    book = ROOT / "docs" / "nport_runbook.html"
-    html = book.read_text(encoding="utf-8")
+    canonical = ROOT / "docs" / "nport_runbook.html"
+    book = ROOT / "docs" / "nport_runbook_legacy_provenance.html"
+    html = canonical.read_text(encoding="utf-8")
     begin, end = "<!-- PROVENANCE:BEGIN -->", "<!-- PROVENANCE:END -->"
     if begin not in html or end not in html:
         raise SystemExit(f"markers missing in {book.name}")

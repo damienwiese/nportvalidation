@@ -36,6 +36,8 @@ from nport.schema_check import (
 )
 from nport.security_master import SecurityMaster
 from nport.xsd_validator import NportValidator
+from nport.policy import FundRegistry, apply_context, derive_context, derive_context_from_config
+from nport.preflight import run_preflight, write_release_manifest
 
 
 def _add_input_args(parser: argparse.ArgumentParser) -> None:
@@ -59,7 +61,7 @@ def main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="command")
 
     # ── The 3 commands you use every month ───────────────────────
-    ms = sub.add_parser("masters", help="STEP 1: build BOTH master workbooks from the custodian (+ AP orders)")
+    ms = sub.add_parser("masters", help="DISABLED: legacy U.S. Bank comparison adapter")
     ms.add_argument("pos", nargs="*", help="[period] — defaults to the latest custodian file")
     ms.add_argument("--period", default=None, help="Filing period (default: latest custodian file)")
     ms.add_argument("--custodian", default=None, help="Custodian CSV (default: data/custodian/<period>_holdings.csv)")
@@ -69,11 +71,11 @@ def main(argv: list[str] | None = None) -> None:
     ms.add_argument("--dry-run", action="store_true", help="Show what would be built")
 
     mhr = sub.add_parser("mergehumanreview", aliases=["merge-human-review"],
-                         help="STEP 1.5: refresh the human-review workbook, then merge filled values into the masters")
+                         help="DISABLED until review is generated from independent inputs")
     mhr.add_argument("pos", nargs="*", help="[period] — defaults to the latest custodian file")
     mhr.add_argument("--period", default=None, help="Filing period (default: latest custodian file)")
 
-    sp = sub.add_parser("split", help="STEP 2: write every per-fund file from BOTH workbooks")
+    sp = sub.add_parser("split", help="DISABLED: current masters contain U.S. Bank-derived data")
     sp.add_argument("pos", nargs="*", help="[period] — defaults to the latest custodian file")
     sp.add_argument("--period", default=None, help="Filing period (default: latest custodian file)")
     sp.add_argument("--dry-run", action="store_true", help="Report targets without writing")
@@ -87,40 +89,78 @@ def main(argv: list[str] | None = None) -> None:
     gen.add_argument("--skip-schema-check", action="store_true")
     gen.add_argument("--verbose", action="store_true")
     gen.add_argument("--strict", action="store_true", help="Treat warnings as errors")
+    gen.add_argument("--account", default=None, help="Fund ticker used to resolve approved policy")
+    gen.add_argument("--registry", default="data/master/fund_registry.csv", help="Approved in-house fund registry")
+    gen.add_argument("--source-manifest", default=None, help="In-house source evidence CSV")
 
     val = sub.add_parser("validate", help="Validate a fund's inputs: `nport validate fdrs [2026-06]`")
     val.add_argument("pos", nargs="*", help="<fund> [period] — what to validate")
     _add_input_args(val)
     val.add_argument("--schema-dir", default=None)
+    val.add_argument("--registry", default="data/master/fund_registry.csv")
+    val.add_argument("--source-manifest", default=None)
+
+    pf = sub.add_parser("preflight", help="Run fail-closed policy, coverage, and source-evidence gates")
+    pf.add_argument("pos", nargs="*", help="<fund> [period]")
+    _add_input_args(pf)
+    pf.add_argument("--account", default=None)
+    pf.add_argument("--registry", default="data/master/fund_registry.csv")
+    pf.add_argument("--source-manifest", required=True)
+
+    cr = sub.add_parser("compare-reference", help="Read-only structural gap comparison; never populates filing data")
+    cr.add_argument("--internal", required=True, help="Internally generated XML")
+    cr.add_argument("--reference", required=True, help="External/reference XML used only as a benchmark")
 
     cs = sub.add_parser("check-schema", help="Check schema files and version")
     cs.add_argument("--schema-dir", default=None)
     cs.add_argument("--force", action="store_true", help="Skip cache")
 
-    en = sub.add_parser("enrich", help="Enrich minimal CSV with Bloomberg data")
+    en = sub.add_parser("enrich", help="DISABLED until input origin is authenticated")
     en.add_argument("--input", required=True, help="Minimal 4-column CSV path")
     en.add_argument("--output", required=True, help="Output canonical holdings CSV path")
     en.add_argument("--batch-size", type=int, default=50, help="Bloomberg batch size")
     en.add_argument("--host", default="localhost", help="Bloomberg host")
     en.add_argument("--port", type=int, default=8194, help="Bloomberg port")
 
-    mg = sub.add_parser("merge", help="Merge positions CSV with a security master")
+    mg = sub.add_parser("merge", help="DISABLED until input origin is authenticated")
     mg.add_argument("--positions", required=True, help="Positions CSV path")
     mg.add_argument("--security-master", required=True, help="Security master CSV path")
     mg.add_argument("--output", required=True, help="Output canonical holdings CSV path (or directory with --split)")
     mg.add_argument("--split", action="store_true", help="Write split CSVs (base + debt + derivatives) instead of one flat file")
 
-    ig = sub.add_parser("ingest", aliases=["build"], help="STEP 3: generate N-PORT XML — `nport build` (all funds) or `nport build fdrs`")
+    ig = sub.add_parser("ingest", aliases=["build"], help="Build XML from independently sourced canonical inputs")
     ig.add_argument("pos", nargs="*", help="[fund] [period] — no fund = every fund for the period")
-    ig.add_argument("--custodian", default=None, help="Custodian CSV (default: data/custodian/<period>_holdings.csv)")
+    ig.add_argument("--custodian", default=None, help="PROHIBITED compatibility flag; cannot feed a build")
     ig.add_argument("--fund-dir", default=None, help="Fund directory (default: data/funds/<fund>)")
-    ig.add_argument("--period", default=None, help="Filing period (default: latest custodian file)")
+    ig.add_argument("--period", default=None, help="Filing period (default: latest canonical fund period)")
     ig.add_argument("--account", default=None, help="Account ticker override")
     ig.add_argument("--output", default=None, help="Output XML path (default: output/<ACCOUNT>_<PERIOD>.xml)")
     ig.add_argument("--schema-dir", default=None, help="XSD schema directory")
     ig.add_argument("--skip-validation", action="store_true", help="Skip XSD validation")
     ig.add_argument("--verbose", action="store_true")
     ig.add_argument("--dry-run", action="store_true", help="Transform and validate only, do not write XML")
+    ig.add_argument("--registry", default="data/master/fund_registry.csv", help="Approved in-house fund registry")
+    ig.add_argument("--source-manifest", default=None, help="Required evidence CSV for independent sources")
+    ig.add_argument("--from-review", action="store_true",
+                    help="Finalize the fund-level human_review.xlsx and build only from that clean package")
+
+    pr = sub.add_parser("prepare-review", help="Create/refresh a fund-level human-review workbook")
+    pr.add_argument("pos", nargs="*", help="<fund> <period>")
+    pr.add_argument("--fund-dir", default=None)
+    pr.add_argument("--period", default=None)
+    pr.add_argument("--positions", default=None, help="Independent canonical positions CSV")
+    pr.add_argument("--orders", default=None, help="Independent create/redeem order CSV")
+
+    rs = sub.add_parser("review-status", help="Show every unresolved fund-level review blocker")
+    rs.add_argument("pos", nargs="*", help="<fund> <period>")
+    rs.add_argument("--fund-dir", default=None)
+    rs.add_argument("--period", default=None)
+
+    fr = sub.add_parser("finalize-review", help="Write a clean canonical bundle from approved review values")
+    fr.add_argument("pos", nargs="*", help="<fund> <period>")
+    fr.add_argument("--fund-dir", default=None)
+    fr.add_argument("--period", default=None)
+    fr.add_argument("--output-root", default="data/builds")
 
     sub.add_parser("schema", help="Print the holdings data schema")
 
@@ -168,14 +208,14 @@ def main(argv: list[str] | None = None) -> None:
     sf.add_argument("--account", default=None, help="Account to split (default: all)")
     sf.add_argument("--dry-run", action="store_true", help="Report targets without writing")
 
-    nf = sub.add_parser("new-filing", aliases=["filing"], help="(advanced) Create blank filing_data.txt templates (`masters`+`split` already produce these)")
+    nf = sub.add_parser("new-filing", aliases=["filing"], help="DISABLED until independent accounting adapter is implemented")
     nf.add_argument("pos", nargs="*", help="[period] [fund] — period defaults to latest, fund defaults to all")
     nf.add_argument("--period", default=None, help="Filing period (default: latest custodian file)")
     nf.add_argument("--fund-dir", default="data/funds", help="Fund directory (default: data/funds)")
     nf.add_argument("--account", default=None, help="Account ticker (default: all fund subdirs)")
     nf.add_argument("--all", action="store_true", dest="all_accounts", help="Process all fund subdirs")
 
-    sub.add_parser("guide", help="Print step-by-step N-PORT filing guide")
+    sub.add_parser("guide", help="DISABLED: use docs/NPORT_Runbook.pdf")
 
     args = parser.parse_args(argv)
     if args.command is None:
@@ -189,11 +229,16 @@ def main(argv: list[str] | None = None) -> None:
         "split": _split,
         "generate": _generate,
         "validate": _validate,
+        "preflight": _preflight,
+        "compare-reference": _compare_reference,
         "check-schema": _check_schema,
         "enrich": _enrich,
         "merge": _merge,
         "ingest": _ingest,
         "build": _ingest,          # alias
+        "prepare-review": _prepare_review,
+        "review-status": _review_status,
+        "finalize-review": _finalize_review,
         "schema": _schema,
         "pull": _pull,
         "build-master": _build_master,
@@ -223,6 +268,18 @@ def _validate_period(period: str) -> None:
 
 _DEFAULT_FUNDS_DIR = Path("data/funds")
 _DEFAULT_CUSTODIAN_DIR = Path("data/custodian")
+
+
+def _block_external_adapter(command: str) -> None:
+    """Fail closed for legacy/unprovenanced canonical-input writers."""
+    print(
+        f"ERROR: `nport {command}` is disabled. Its current input path either reads U.S. "
+        "Bank artifacts or cannot authenticate that its inputs are independent. "
+        "Use independently sourced canonical fund_config.txt, filing_data.txt, and "
+        "holdings.csv files with an approved --source-manifest.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 
 def _split_positionals(pos: list[str] | None) -> tuple[str | None, str | None]:
@@ -274,23 +331,110 @@ def _discover_custodians() -> list[tuple[Path, str]]:
 
 
 def _latest_period() -> str | None:
-    """The newest period among the custodian CSVs (by their Date column, any filename)."""
-    periods = [per for _, per in _discover_custodians()]
+    """Newest canonical period already present under an internal fund directory."""
+    periods: list[str] = []
+    if _DEFAULT_FUNDS_DIR.is_dir():
+        for filing_dir in _DEFAULT_FUNDS_DIR.glob("*/filings/*"):
+            if filing_dir.is_dir() and _PERIOD_RE.match(filing_dir.name):
+                periods.append(filing_dir.name)
     return max(periods) if periods else None
 
 
 def _resolve_period(period: str | None) -> str:
-    """Validate an explicit period, or auto-detect the latest custodian file."""
+    """Validate an explicit period, or detect the latest canonical internal period."""
     if period:
         _validate_period(period)
         return period
     latest = _latest_period()
     if not latest:
-        print("ERROR: No period given and none found in data/custodian/. "
+        print("ERROR: No period given and none found in data/funds/*/filings/. "
               "Pass one, e.g. `2026-06`.", file=sys.stderr)
         sys.exit(1)
     print(f"Using latest period: {latest}")
     return latest
+
+
+def _resolve_review_target(args) -> tuple[Path, str, str]:
+    """Resolve one fund and one period for the fund-level review workflow."""
+    pos_account, pos_period = _split_positionals(getattr(args, "pos", None))
+    period = pos_period or getattr(args, "period", None)
+    if not period:
+        print("ERROR: a review period is required, e.g. 2026-06.", file=sys.stderr)
+        sys.exit(1)
+    _validate_period(period)
+    account = pos_account or getattr(args, "account", None)
+    explicit_dir = getattr(args, "fund_dir", None)
+    if explicit_dir:
+        fund_dir = Path(explicit_dir)
+        account = (account or fund_dir.name).upper()
+    elif account:
+        fund_dir = _DEFAULT_FUNDS_DIR / account.lower()
+        account = account.upper()
+    else:
+        print("ERROR: specify one fund, e.g. `nport prepare-review fdrs 2026-06`.", file=sys.stderr)
+        sys.exit(1)
+    if not (fund_dir / "fund_config.txt").is_file():
+        print(f"ERROR: fund_config.txt not found under {fund_dir}.", file=sys.stderr)
+        sys.exit(1)
+    return fund_dir, account, period
+
+
+def _print_review_blockers(blockers) -> None:
+    for finding in blockers:
+        print(f"BLOCKER {finding.code}: {finding.plain}")
+        print(f"  Fix: {finding.technical}")
+
+
+def _prepare_review(args) -> None:
+    from nport.fund_review import prepare_review
+
+    fund_dir, account, period = _resolve_review_target(args)
+    try:
+        path = prepare_review(
+            fund_dir, period, positions=getattr(args, "positions", None),
+            orders=getattr(args, "orders", None),
+        )
+    except (OSError, ValueError) as exc:
+        print(f"ERROR: review workbook could not be prepared: {exc}", file=sys.stderr)
+        sys.exit(1)
+    print(f"Prepared: {path}")
+    print(f"Fund/period: {account} {period}")
+    print("Next: complete Sources, FundFields, HoldingFields, and Approvals; then run review-status.")
+
+
+def _review_status(args) -> None:
+    from nport.fund_review import evaluate_review
+
+    fund_dir, account, period = _resolve_review_target(args)
+    try:
+        result = evaluate_review(fund_dir, period)
+    except (OSError, ValueError) as exc:
+        print(f"ERROR: review could not be evaluated: {exc}", file=sys.stderr)
+        sys.exit(1)
+    blockers = result.get("blockers", [])
+    if blockers:
+        print(f"{account} {period}: BLOCKED ({len(blockers)} unresolved item(s))")
+        _print_review_blockers(blockers)
+        sys.exit(1)
+    print(f"{account} {period}: READY — zero review blockers.")
+
+
+def _finalize_review(args) -> None:
+    from nport.fund_review import ReviewBlocked, finalize_review
+
+    fund_dir, account, period = _resolve_review_target(args)
+    try:
+        destination = finalize_review(
+            fund_dir, period, output_root=getattr(args, "output_root", "data/builds")
+        )
+    except ReviewBlocked as exc:
+        print(f"{account} {period}: NOT FINALIZED ({len(exc.blockers)} blocker(s))", file=sys.stderr)
+        _print_review_blockers(exc.blockers)
+        sys.exit(1)
+    except (OSError, ValueError) as exc:
+        print(f"ERROR: review could not be finalized: {exc}", file=sys.stderr)
+        sys.exit(1)
+    print(f"Finalized clean bundle: {destination}")
 
 
 def _resolve_custodian(custodian: str | None, period: str) -> Path:
@@ -364,8 +508,103 @@ def _parse_inputs(args):
     return results[0], results[1], results[2]
 
 
+def _policy_account(args, config) -> str | None:
+    explicit = getattr(args, "account", None)
+    if explicit:
+        return explicit.upper()
+    fund_dir = getattr(args, "fund_dir", None)
+    if fund_dir:
+        return Path(fund_dir).name.upper()
+    return None
+
+
+def _apply_approved_policy(args, config, filing, *, require: bool = False):
+    """Resolve and apply the effective internal policy, never comparison data."""
+    account = _policy_account(args, config)
+    period = getattr(args, "period", None) or filing.rep_pd_date[:7]
+    if config.fiscal_year_end_mmdd:
+        if not account:
+            if require:
+                raise ValueError("fund ticker is required to resolve approved policy (pass --account)")
+            return filing, None, "No fund ticker supplied; approved policy was not applied."
+        context = derive_context_from_config(config, account, period, "fund_config.txt")
+        return apply_context(filing, context), context, None
+
+    registry_path = Path(getattr(args, "registry", "data/master/fund_registry.csv"))
+    if not registry_path.is_file():
+        if require:
+            raise ValueError(
+                f"approved fund registry not found: {registry_path}; copy the template, "
+                "populate it from internal governance records, and obtain approval"
+            )
+        return filing, None, f"No approved fund registry at {registry_path}; TEST output is not release-eligible."
+    if not account:
+        if require:
+            raise ValueError("fund ticker is required to resolve approved policy (pass --account)")
+        return filing, None, "No fund ticker supplied; approved policy was not applied."
+    registry = FundRegistry.from_csv(registry_path)
+    context = derive_context(registry, account, period)
+    return apply_context(filing, context), context, None
+
+
+def _preflight(args) -> None:
+    pos_account, pos_period = _split_positionals(getattr(args, "pos", None))
+    if pos_account:
+        args.account = pos_account
+    if pos_account and not args.fund_dir:
+        args.fund_dir = str(_DEFAULT_FUNDS_DIR / pos_account.lower())
+    if pos_period:
+        args.period = pos_period
+    if args.fund_dir and not args.period:
+        args.period = _resolve_period(None)
+    config, filing, holdings = _parse_inputs(args)
+    try:
+        filing, context, _ = _apply_approved_policy(args, config, filing, require=True)
+    except (OSError, ValueError) as exc:
+        print(f"PREFLIGHT BLOCKER: {exc}", file=sys.stderr)
+        sys.exit(1)
+    findings = run_preflight(context, filing, holdings, args.source_manifest)
+    errors, warnings = validate_all(config, filing, holdings)
+    for finding in findings:
+        print(f"{finding.severity} {finding.code}: {finding.technical}")
+        print(f"  Plain English: {finding.plain}")
+    _log_issues(errors, warnings, "INPUT")
+    blockers = sum(finding.severity == "BLOCKER" for finding in findings) + len(errors)
+    if blockers:
+        print(f"PREFLIGHT FAILED: {blockers} blocker(s).")
+        sys.exit(1)
+    print("PREFLIGHT PASSED: policy, coverage, freshness, hashes, and approvals are complete.")
+
+
+def _compare_reference(args) -> None:
+    from lxml import etree
+    from nport.reference_compare import compare_reference
+    try:
+        result = compare_reference(args.internal, args.reference)
+    except (OSError, etree.XMLSyntaxError) as exc:
+        print(f"COMPARE ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
+    print("READ-ONLY REFERENCE COMPARISON (not a production data source)")
+    print(f"  Internal:  as-of {result.internal_report_date}; fiscal year-end {result.internal_fiscal_year_end}")
+    print(f"  Reference: as-of {result.reference_report_date}; fiscal year-end {result.reference_fiscal_year_end}")
+    print(f"  Structures present in reference but absent internally: {len(result.missing_structures)}")
+    for path in result.missing_structures:
+        print(f"    MISSING {path}")
+    print(f"  Structures present internally but absent in reference: {len(result.extra_structures)}")
+    for path in result.extra_structures:
+        print(f"    EXTRA   {path}")
+
+
 def _generate(args) -> None:
     all_warnings = []
+
+    if not args.source_manifest:
+        print(
+            "ERROR: --source-manifest is required. Explicit-file generation cannot bypass "
+            "independent source provenance.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # Schema files
     schema_errors, schema_warnings = check_schema_files(args.schema_dir)
@@ -381,6 +620,21 @@ def _generate(args) -> None:
 
     # Parse
     config, filing, holdings = _parse_inputs(args)
+    try:
+        filing, context, policy_warning = _apply_approved_policy(
+            args, config, filing, require=True
+        )
+    except (OSError, ValueError) as exc:
+        print(f"POLICY ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
+    if policy_warning:
+        all_warnings.append(policy_warning)
+    preflight_findings = run_preflight(context, filing, holdings, args.source_manifest)
+    blockers = [finding for finding in preflight_findings if finding.severity == "BLOCKER"]
+    if blockers:
+        for finding in blockers:
+            print(f"PREFLIGHT BLOCKER {finding.code}: {finding.technical}", file=sys.stderr)
+        sys.exit(1)
     if args.verbose:
         print(f"Parsed: {config.reg_name} / {config.series_name} / "
               f"{filing.submission_type} {filing.rep_pd_end} / {len(holdings)} holdings")
@@ -424,6 +678,25 @@ def _generate(args) -> None:
         Path(tmp).unlink(missing_ok=True)
         raise
     print(f"Written: {output_path} ({len(xml_bytes)} bytes)")
+    if context:
+        input_paths = [value for value in (args.config, args.filing, args.holdings) if value]
+        if args.fund_dir and args.period:
+            base = Path(args.fund_dir)
+            input_paths = [
+                base / "fund_config.txt",
+                base / "filings" / args.period / "filing_data.txt",
+                base / "filings" / args.period / "holdings.csv",
+            ]
+        input_paths.append(args.source_manifest)
+        manifest_findings = preflight_findings or run_preflight(
+            context, filing, holdings, args.source_manifest
+        )
+        write_release_manifest(
+            output_path.with_suffix(".manifest.json"), ticker=_policy_account(args, config),
+            period=args.period or filing.rep_pd_date[:7], context=context, xml_path=output_path,
+            input_paths=input_paths, xsd_version=CURRENT_SCHEMA_VERSION,
+            findings=manifest_findings, live_test_flag=filing.live_test_flag,
+        )
 
 
 def _validate(args) -> None:
@@ -440,10 +713,18 @@ def _validate(args) -> None:
         _log_issues(schema_errors, [])
 
     config, filing, holdings = _parse_inputs(args)
+    policy_warnings = []
+    try:
+        filing, _context, policy_warning = _apply_approved_policy(args, config, filing)
+        if policy_warning:
+            policy_warnings.append(policy_warning)
+    except (OSError, ValueError) as exc:
+        print(f"POLICY ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
     print(f"  Parsed: {config.reg_name} / {filing.submission_type} {filing.rep_pd_end} / {len(holdings)} holdings")
 
     errors, warnings = validate_all(config, filing, holdings)
-    _log_issues(errors, warnings)
+    _log_issues(errors, warnings + policy_warnings)
     if errors:
         print(f"\nFAILED ({len(errors)} error(s)).")
         sys.exit(1)
@@ -451,6 +732,7 @@ def _validate(args) -> None:
 
 
 def _enrich(args) -> None:
+    _block_external_adapter("enrich")
     from nport.bloomberg import enrich_holdings
     enrich_holdings(
         input_path=Path(args.input),
@@ -463,6 +745,7 @@ def _enrich(args) -> None:
 
 def _merge(args) -> None:
     """Merge positions CSV with a security master."""
+    _block_external_adapter("merge")
     # Read positions CSV, mapping camelCase headers to snake_case
     positions = []
     with open(args.positions, newline="", encoding="utf-8") as f:
@@ -566,8 +849,7 @@ def _ingest(args) -> None:
 
 
 def _ingest_one(args) -> None:
-    """Ingest custodian CSV → enriched holdings → N-PORT XML for ONE fund."""
-    # 0. Resolve shorthand: `nport build <fund> [period]`
+    """Build one fund only from independently sourced canonical files."""
     pos_account, pos_period = _split_positionals(getattr(args, "pos", None))
     args.period = _resolve_period(pos_period or args.period)
     args.account = pos_account or args.account
@@ -576,63 +858,20 @@ def _ingest_one(args) -> None:
     if not args.fund_dir:
         print("ERROR: specify which fund, e.g. `nport build fdrs`.", file=sys.stderr)
         sys.exit(1)
-
-    # 1. Parse custodian CSV (auto-located from period if not given)
-    all_rows = parse_custodian_csv(_resolve_custodian(args.custodian, args.period))
-
-    # 2. Resolve fund dir and account
-    fund_dir, account = _resolve_fund_dir(args.fund_dir, args.account)
-
-    # 3. Filter rows to this account
-    grouped = filter_by_account(all_rows, account)
-    account_rows = grouped.get(account, [])
-    if not account_rows:
-        available = sorted({r.account for r in all_rows})
-        print(f"ERROR: No rows for account '{account}'. Available: {available}", file=sys.stderr)
+    if getattr(args, "custodian", None):
+        print("ERROR: --custodian is prohibited; U.S. Bank files are comparison-only.",
+              file=sys.stderr)
         sys.exit(1)
-
-    if args.verbose:
-        print(f"Account {account}: {len(account_rows)} custodian rows")
-
-    # 4. Transform + merge + validate. pct_val is restated against the net assets the filing
-    #    will report (EagleSTAR may have overridden the custodian's), so the percentages tie
-    #    to the reported total. filing_data.txt is written by `split`, before build.
-    loader = DataLoader(fund_dir)
-    try:
-        filed_net_assets = _fnum(loader.load_filing(args.period).net_assets) or None
-    except (FileNotFoundError, ValueError):
-        filed_net_assets = None   # reported below by the step-6 load, with a proper message
-    enriched, messages = ingest_account(account_rows, fund_dir, args.period,
-                                        net_assets=filed_net_assets)
-
-    # Log messages. A missing required field OR any "ERROR:"-tagged message (unclassifiable
-    # row, parse failure) is build-blocking — fail loud, never ship a silently-dropped holding.
-    errors = [m for m in messages if "missing required field" in m or m.startswith("ERROR")]
-    warnings = [m for m in messages if m not in errors]
-    if args.verbose or errors:
-        _log_issues(errors, warnings, "INGEST")
-
-    if not enriched:
-        print("ERROR: No holdings after transformation.", file=sys.stderr)
-        sys.exit(1)
-
-    if args.verbose:
-        print(f"Transformed: {len(enriched)} holdings")
-
-    if args.dry_run:
-        print(f"DRY RUN: {len(enriched)} holdings transformed for {account} ({args.period})")
-        if errors:
-            print(f"  {len(errors)} validation error(s) — see above.", file=sys.stderr)
+    if getattr(args, "from_review", False):
+        _build_from_review(args)
         return
+    if not getattr(args, "source_manifest", None):
+        print("ERROR: --source-manifest is required; unprovenanced canonical files cannot be built.",
+              file=sys.stderr)
+        sys.exit(1)
 
-    # 5. Write split CSVs to filing period dir
-    period_dir = fund_dir / "filings" / args.period
-    written = write_split_csv(enriched, period_dir)
-    if args.verbose:
-        for wp in written:
-            print(f"  Written: {wp}")
-
-    # 6. Load back via standard pipeline
+    fund_dir, account = _resolve_fund_dir(args.fund_dir, args.account)
+    loader = DataLoader(fund_dir)
     try:
         config = loader.load_config()
         filing = loader.load_filing(args.period)
@@ -644,6 +883,11 @@ def _ingest_one(args) -> None:
         print(f"ERROR: parse error: {e}", file=sys.stderr)
         sys.exit(1)
 
+    try:
+        filing, context, _ = _apply_approved_policy(args, config, filing, require=True)
+    except (OSError, ValueError) as exc:
+        print(f"POLICY ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
     if args.verbose:
         print(f"Loaded: {config.series_name} / {filing.submission_type} {filing.rep_pd_end} / {len(holdings)} holdings")
 
@@ -653,18 +897,13 @@ def _ingest_one(args) -> None:
         _log_issues(input_errors, [], "INPUT")
         sys.exit(1)
 
-    # 7b. LIVE gate — a LIVE filing must have a clean reconciliation (nothing left that
-    # doesn't add up or needs human review). TEST always builds so the operator can iterate.
-    if filing.live_test_flag != "TEST":
-        gate = _live_gate_reasons(account, args.period)
-        if gate:
-            print(f"ERROR: {account} is blocked from LIVE — unresolved reconciliation/gaps "
-                  f"(filing left as TEST). Resolve and re-run:", file=sys.stderr)
-            for r in gate[:8]:
-                print(f"    {r}", file=sys.stderr)
-            if len(gate) > 8:
-                print(f"    … +{len(gate) - 8} more", file=sys.stderr)
-            sys.exit(1)
+    preflight_findings = run_preflight(context, filing, holdings, args.source_manifest)
+    preflight_blockers = [f for f in preflight_findings if f.severity == "BLOCKER"]
+    if preflight_blockers:
+        print(f"ERROR: {account} failed independent-source preflight:", file=sys.stderr)
+        for finding in preflight_blockers:
+            print(f"    {finding.code}: {finding.technical}", file=sys.stderr)
+        sys.exit(1)
 
     # 8. Build XML
     xml_bytes = NportBuilder(config, filing, holdings).to_xml_bytes()
@@ -680,7 +919,11 @@ def _ingest_one(args) -> None:
         elif args.verbose:
             print("XSD validation passed")
 
-    # 10. Write XML
+    if args.dry_run:
+        _log_issues([], input_warnings)
+        print(f"DRY RUN PASSED: {account} {args.period}; no XML written.")
+        return
+
     output_path = Path(args.output) if args.output else Path("output") / f"{account}_{args.period}.xml"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=output_path.parent, suffix=".tmp")
@@ -694,6 +937,65 @@ def _ingest_one(args) -> None:
 
     _log_issues([], input_warnings)
     print(f"Written: {output_path} ({len(xml_bytes)} bytes)")
+    period_dir = fund_dir / "filings" / args.period
+    write_release_manifest(
+        output_path.with_suffix(".manifest.json"), ticker=account, period=args.period,
+        context=context, xml_path=output_path,
+        input_paths=[fund_dir / "fund_config.txt", period_dir / "filing_data.txt",
+                     period_dir / "holdings.csv", args.source_manifest],
+        xsd_version=CURRENT_SCHEMA_VERSION, findings=preflight_findings,
+        live_test_flag=filing.live_test_flag,
+    )
+
+
+def _build_from_review(args) -> None:
+    """Finalize an approved review package and generate only from that clean bundle."""
+    from nport.fund_review import ReviewBlocked, finalize_review
+
+    fund_dir, account = _resolve_fund_dir(args.fund_dir, args.account)
+
+    def generate_from(bundle: Path, output: Path) -> None:
+        generated = argparse.Namespace(
+            config=str(bundle / "fund_config.txt"),
+            filing=str(bundle / "filing_data.txt"),
+            holdings=str(bundle / "holdings.csv"),
+            fund_dir=None,
+            period=args.period,
+            account=account,
+            registry=getattr(args, "registry", "data/master/fund_registry.csv"),
+            source_manifest=str(bundle / "source_manifest.csv"),
+            output=str(output),
+            schema_dir=args.schema_dir,
+            skip_validation=args.skip_validation,
+            skip_schema_check=False,
+            verbose=args.verbose,
+            strict=False,
+        )
+        _generate(generated)
+
+    if args.dry_run:
+        with tempfile.TemporaryDirectory() as scratch:
+            try:
+                bundle = finalize_review(
+                    fund_dir, args.period, output_root=Path(scratch) / "builds"
+                )
+            except ReviewBlocked as exc:
+                print(f"{account} {args.period}: BLOCKED ({len(exc.blockers)} item(s))", file=sys.stderr)
+                _print_review_blockers(exc.blockers)
+                sys.exit(1)
+            generate_from(bundle, Path(scratch) / f"{account}_{args.period}.xml")
+        print(f"DRY RUN PASSED: {account} {args.period}; no bundle or XML retained.")
+        return
+
+    try:
+        bundle = finalize_review(fund_dir, args.period)
+    except ReviewBlocked as exc:
+        print(f"{account} {args.period}: BLOCKED ({len(exc.blockers)} item(s))", file=sys.stderr)
+        _print_review_blockers(exc.blockers)
+        sys.exit(1)
+    output = Path(args.output) if args.output else Path("output") / f"{account}_{args.period}.xml"
+    generate_from(bundle, output)
+    print(f"Clean canonical bundle: {bundle}")
 
 
 def _schema(args) -> None:
@@ -816,7 +1118,8 @@ def _write_provenance_and_reconciliation(period, custodian_rows, ap_orders, eag)
         w = csv.writer(f)
         w.writerow(["check", "fund", "source_a", "value_a", "source_b", "value_b", "diff", "flag"])
 
-        # netAssets: custodian (writer) vs NAV (x-check). As-of differs (NAV ~06-24 vs period-end).
+        # netAssets cross-check: custody value vs EagleSTAR NAV. When EagleSTAR filing data
+        # is loaded, the filed netAssets comes from the Trial Balance, not either side here.
         for acct, cn in sorted(cust_net.items()):
             nav = eag.nav_net_assets.get(acct)
             if nav is None:
@@ -827,7 +1130,7 @@ def _write_provenance_and_reconciliation(period, custodian_rows, ap_orders, eag)
                 flags["netAssets"] += 1
             w.writerow(["netAssets", acct, "custodian", f"{cn:.2f}", f"NAV@{pval_as_of}", f"{nav:.2f}", f"{diff:.2f}", flag])
 
-        # flows: AP order book (writer) vs EagleSTAR TB (x-check).
+        # flows: EagleSTAR TB is the filing writer; AP create/redeem is the cross-check.
         for acct in sorted(set(ap_flows) | set(eag.flows)):
             for mon in ("mon1", "mon2", "mon3"):
                 for side in ("Sales", "Redemption"):
@@ -911,6 +1214,7 @@ def _resolve_fund_accounting(explicit: str | None) -> Path | None:
 
 def _masters(args) -> None:
     """STEP 1: build BOTH master workbooks (security + filing) from the custodian."""
+    _block_external_adapter("masters")
     _, pos_period = _split_positionals(getattr(args, "pos", None))
     period = _resolve_period(pos_period or getattr(args, "period", None))
     custodian = _resolve_custodian(args.custodian, period)
@@ -971,6 +1275,7 @@ def _split(args) -> None:
     Human-reviewed reference data is merged into the masters first by `nport mergehumanreview`,
     so split is a straight projection of the (merged) masters.
     """
+    _block_external_adapter("split")
     _, pos_period = _split_positionals(getattr(args, "pos", None))
     period = _resolve_period(pos_period or getattr(args, "period", None))
     fund_dir = _DEFAULT_FUNDS_DIR
@@ -1015,6 +1320,7 @@ def _mergehumanreview(args) -> None:
     Then `nport split`. Merging freezes the Bloomberg-populated cells to literal values, so
     re-run `nport masters` if you ever need live =BDP formulas again.
     """
+    _block_external_adapter("mergehumanreview")
     from nport import humanreview
     from nport.filing_master import merge_review_into_filing_master
     from nport.master_sheet import merge_review_into_master, read_master_xlsx
@@ -1047,17 +1353,28 @@ def _mergehumanreview(args) -> None:
         print(f"ERROR: can't write a master workbook — close it in Excel and retry ({e.filename}).", file=sys.stderr)
         sys.exit(1)
 
-    blocking = gaps.get("invCountry", 0)
+    # Report EVERY sheet with an unfilled required cell. Reporting only invCountry hid 58
+    # blank swap-leg spreads behind "0 unfilled" — the build then failed on all 52 swap funds.
     print(f"  Merged human review ({review_path.name}) into the masters.")
-    print(f"    swap/option reference still unfilled: {sm_gaps}; invCountry gaps: {blocking}; "
-          f"funds with N/A designated index: {na_idx}")
-    if blocking or sm_gaps:
-        print(f"    -> fill the blanks in {review_path}, then run `nport mergehumanreview` again.")
-    print("  Next: `nport split`.")
+    outstanding = {sheet: n for sheet, n in sorted(gaps.items()) if n}
+    if outstanding:
+        print("    rows still missing a REQUIRED value:")
+        for sheet, n in outstanding.items():
+            print(f"      {sheet:22} {n}")
+    if sm_gaps:
+        print(f"    swap/option reference still unresolved: {sm_gaps}")
+    print(f"    funds with N/A designated index: {na_idx} (allowed — prospectus fill)")
+    if outstanding or sm_gaps:
+        print(f"\n    -> fill the blanks in {review_path}, then run "
+              f"`nport mergehumanreview` again. The build WILL fail until they are filled.")
+        print("  Next: fill the workbook (not `nport split` yet).")
+    else:
+        print("  Next: `nport split`.")
 
 
 def _build_master(args) -> None:
     """Refresh the one global master spreadsheet from the custodian CSV."""
+    _block_external_adapter("build-master")
     master_path = Path(args.master)
     fund_dir = Path(args.fund_dir)
 
@@ -1120,6 +1437,7 @@ def _build_master(args) -> None:
 
 def _split_master(args) -> None:
     """Regenerate per-fund security_master.csv files from the master workbook."""
+    _block_external_adapter("split-master")
     master_path = Path(args.master)
     if not master_path.is_file():
         print(f"ERROR: Master workbook not found: {master_path}", file=sys.stderr)
@@ -1145,6 +1463,7 @@ def _split_master(args) -> None:
 
 def _build_filing_master(args) -> None:
     """Build the per-period filing-returns workbook from the custodian + Bloomberg formulas."""
+    _block_external_adapter("build-filing-master")
     master_path = Path(args.master)
     _, pos_period = _split_positionals(getattr(args, "pos", None))
     period = _resolve_period(pos_period or getattr(args, "period", None))
@@ -1169,6 +1488,7 @@ def _build_filing_master(args) -> None:
 
 def _split_filing_master(args) -> None:
     """Write each fund's filing_data.txt from the filing master workbook."""
+    _block_external_adapter("split-filing-master")
     master_path = Path(args.master)
     if not master_path.is_file():
         print(f"ERROR: Filing master not found: {master_path}", file=sys.stderr)
@@ -1192,6 +1512,7 @@ def _split_filing_master(args) -> None:
 
 def _new_filing(args) -> None:
     """Create filing_data.txt template(s) for a new period."""
+    _block_external_adapter("new-filing")
     # Resolve shorthand: `nport filing [period] [fund]`
     pos_account, pos_period = _split_positionals(getattr(args, "pos", None))
     args.account = pos_account or args.account
@@ -1238,6 +1559,27 @@ def _new_filing(args) -> None:
 
 
 def _guide(args) -> None:
+    print("""\
+Independent N-PORT Filing
+=========================
+
+U.S. Bank custody, EagleSTAR, prepared filings, email attachments, and all files
+derived from them are comparison-only. They cannot populate the in-house filing.
+
+Required before build:
+  1. Independently sourced canonical fund_config.txt, filing_data.txt, holdings.csv.
+  2. Approved data/master/fund_registry.csv.
+  3. Source manifest with path, report-date cutoff, hash, count, and approver.
+
+Safe commands:
+  nport preflight <fund> <period> --registry <file> --source-manifest <file>
+  nport build <fund> <period> --registry <file> --source-manifest <file>
+  nport compare-reference --internal <xml> --reference <xml>
+
+Legacy master, split, merge, enrich, and carry-forward writers are disabled.
+See docs/NPORT_Runbook.pdf for the field-level operating procedure.
+""")
+    return
     """Print the step-by-step N-PORT filing guide."""
     print("""\
 N-PORT Monthly Filing — 3 commands

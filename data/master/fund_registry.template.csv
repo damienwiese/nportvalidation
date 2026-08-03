@@ -1,0 +1,2 @@
+ticker,fiscal_year_end_mmdd,derivatives_regime,liquidity_required,cash_b2f_required,active_from,active_to,approved_by,approved_at,source_system,source_ref,required_sources
+EXAMPLE,31-Dec,NONE,Y,Y,1/1/2026,,Compliance Officer,2026-01-01T00:00:00-06:00,Internal Board Records,approval-ticket-id,internal_positions;internal_fund_accounting;internal_create_redeem;internal_security_reference;internal_liquidity

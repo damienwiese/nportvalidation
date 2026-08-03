@@ -1,5 +1,8 @@
 """One global master spreadsheet → per-fund security masters.
 
+COMPARISON-ONLY LEGACY ADAPTER. This workbook is U.S. Bank-derived and its CLI
+build/split/merge paths are disabled for the in-house service.
+
 Instead of editing ~90 per-fund ``data/funds/<fund>/security_master.csv`` files,
 the operator maintains a single Excel workbook
 (``data/master/security_master.xlsx``) with two sheets:

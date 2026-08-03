@@ -1,5 +1,8 @@
 """Custodian CSV parser and transformer for N-PORT filings.
 
+COMPARISON-ONLY LEGACY ADAPTER. Production CLI paths fail closed before calling
+this module. It remains only for audit comparison and fixture-level regression tests.
+
 Reads US Bank custodian CSVs, classifies each row by holding type,
 parses type-specific string formats (option names, treasury names,
 swap tickers), and transforms into snake_case holding dicts compatible
@@ -816,7 +819,7 @@ _FRESH_TEMPLATE = """\
 submissionType=NPORT-P
 liveTestFlag=TEST
 repPdEnd={end_date}
-repPdDate={end_date}
+repPdDate={report_date}
 isFinalFiling=N
 dateSigned=YYYY-MM-DD
 
@@ -839,6 +842,7 @@ amtPayAftOneYrOther=0
 delayDeliv=0
 standByCommit=0
 liquidPref=0
+cashNotReportedInCOrD=
 isNonCashCollateral=N
 
 # Returns (monthly class returns; N/A if not applicable)
@@ -866,6 +870,17 @@ mon3Reinvestment=0
 # Designated Index
 nameDesignatedIndex=N/A
 indexIdentifier=N/A
+
+# Conditional coverage (populated only from approved internal sources)
+monthlyReturnCategoriesJson=
+derivativesRegime=
+derivExposurePct=
+derivCurrencyExposurePct=
+derivInterestRateExposurePct=
+derivDaysInExcess=
+medianDailyVarPct=
+medianVarRatioPct=
+backtestingExceptions=
 """
 
 
@@ -889,6 +904,15 @@ def generate_filing_template(
         return target_path  # caller checks and skips
 
     end_date = _period_end_date(period)
+    submission_type = "NPORT-P"
+    report_date = end_date
+    registry_path = Path("data/master/fund_registry.csv")
+    if registry_path.is_file():
+        from nport.policy import FundRegistry, derive_context
+        context = derive_context(FundRegistry.from_csv(registry_path), fund_dir.name, period)
+        end_date = context.fiscal_year_end.isoformat()
+        report_date = context.report_date.isoformat()
+        submission_type = context.submission_type
 
     # Try to find the most recent previous filing
     prev_path = _find_previous_filing(filings_dir, period)
@@ -896,11 +920,20 @@ def generate_filing_template(
     target_dir.mkdir(parents=True, exist_ok=True)
 
     if prev_path:
-        _copy_with_updates(prev_path, target_path, period, end_date)
+        _copy_with_updates(prev_path, target_path, period, end_date, report_date)
     else:
         target_path.write_text(
-            _FRESH_TEMPLATE.format(period=period, end_date=end_date)
+            _FRESH_TEMPLATE.format(period=period, end_date=end_date, report_date=report_date)
         )
+
+    # submissionType is policy-derived when an approved registry exists.
+    content = target_path.read_text(encoding="utf-8")
+    content = re.sub(
+        r"(?m)^submissionType=NPORT-(?:P|NP)$",
+        f"submissionType={submission_type}",
+        content,
+    )
+    target_path.write_text(content, encoding="utf-8")
 
     return target_path
 
@@ -947,7 +980,7 @@ _RETURN_KEYS = {"rtn1", "rtn2", "rtn3"}
 
 
 def _copy_with_updates(
-    src: Path, dst: Path, period: str, end_date: str,
+    src: Path, dst: Path, period: str, end_date: str, report_date: str | None = None,
 ) -> None:
     """Copy a filing_data.txt, updating dates and zeroing returns/flows."""
     lines = src.read_text().splitlines()
@@ -966,7 +999,7 @@ def _copy_with_updates(
             out.append(f"repPdEnd={end_date}")
             continue
         if stripped.startswith("repPdDate="):
-            out.append(f"repPdDate={end_date}")
+            out.append(f"repPdDate={report_date or end_date}")
             continue
         if stripped.startswith("dateSigned="):
             out.append("dateSigned=YYYY-MM-DD")

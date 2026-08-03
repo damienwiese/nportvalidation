@@ -36,10 +36,7 @@ class NportValidator:
         if self.schema.validate(doc):
             return []
 
-        # Known EDGAR quirk: v1.13 XSD requires medianDailyVarPct in varInfo,
-        # but EDGAR accepts filings without it (Rule 18f-4 exemption).
         return [
             f"Line {err.line}: {err.message}"
             for err in self.schema.error_log
-            if "medianDailyVarPct" not in err.message
         ]

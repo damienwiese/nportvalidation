@@ -307,8 +307,10 @@ def main() -> None:
 
     o.append('</section>')
 
-    book = ROOT / "docs" / "nport_runbook.html"
-    html = book.read_text(encoding="utf-8")
+    # Keep historical metric generation away from the governed production runbook.
+    canonical = ROOT / "docs" / "nport_runbook.html"
+    book = ROOT / "docs" / "nport_runbook_legacy_generated.html"
+    html = canonical.read_text(encoding="utf-8")
     b, e = "<!-- FINDINGS:BEGIN -->", "<!-- FINDINGS:END -->"
     if b not in html or e not in html:
         raise SystemExit(f"markers {b}/{e} missing in {book.name}")
@@ -325,7 +327,7 @@ def main() -> None:
     print(f"swap L/S     : {xs['swaps'] - xs['swap_na']}/{xs['swaps']}")
     print(f"delta blank  : {xs['opt_na']}/{xs['opts']}")
     print(f"returns      : {ragree}/{rtotal} consistent with inception")
-    print(f"\nspliced findings into {book.relative_to(ROOT)}")
+    print(f"\nwrote legacy findings snapshot to {book.relative_to(ROOT)}; canonical runbook unchanged")
 
 
 if __name__ == "__main__":
