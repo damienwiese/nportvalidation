@@ -44,13 +44,17 @@ table { width: 100%; border-collapse: collapse; margin: 7px 0 14px; table-layout
 th { padding: 7px 7px; text-align: left; color: #17324d; background: #ffffff; border-top: 1px solid #7f9dad; border-bottom: 2px solid #7f9dad; font-size: 8.4pt; text-transform: uppercase; }
 td { padding: 6px 7px; vertical-align: top; border-bottom: 1px solid #d4dde6; overflow-wrap: anywhere; }
 tr { break-inside: avoid; }
+.table-block { break-inside: avoid; page-break-inside: avoid; margin-bottom: 11px; }
+.table-block table { margin: 0; }
+.continued { margin: 2px 0 5px; color: #536b7d; font-size: 9.5pt; }
 .dense { font-size: 8.1pt; line-height: 1.28; }
 .dense th, .dense td { padding: 4.5px 5px; }
 .dense code { font-size: 7.2pt; line-height: 1.15; overflow-wrap: anywhere; white-space: normal; }
 .steps { margin: 8px 0 14px; }
 .step { margin: 0 0 10px; padding: 10px 12px; border: 1px solid #c9d7df; break-inside: avoid; }
 .step h3 { margin: 0 0 5px; }
-.cmd { margin: 6px 0; padding: 7px 9px; border: 1px solid #cbd5df; background: #f7fafb; font: 8pt/1.35 Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.label { display: inline-block; min-width: 0.72in; color: #17324d; font-weight: 700; }
+.cmd { margin: 6px 0; padding: 7px 9px; border: 1px solid #cbd5df; background: #f7fafb; font: 8pt/1.35 Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; break-inside: avoid; page-break-inside: avoid; }
 .id { width: .55in; font-weight: 700; color: #2b6d73; }
 .status { font-weight: 700; }
 .blocked { color: #a72e1c; }
@@ -79,6 +83,23 @@ def t(headers: list[str], rows: list[list[str]], widths: list[str] | None = None
     head = "".join(f"<th>{h}</th>" for h in headers)
     content = "".join("<tr>" + "".join(f"<td>{c}</td>" for c in row) + "</tr>" for row in rows)
     return f'<table class="{cls}">{cg}<thead><tr>{head}</tr></thead><tbody>{content}</tbody></table>'
+
+
+def chunked_t(
+    headers: list[str], rows: list[list[str]], widths: list[str] | None = None,
+    cls: str = "", chunk_size: int = 4, chunk_label: str | None = None,
+    label_first: bool = False,
+) -> str:
+    """Render small complete tables so no logical table is split across PDF pages."""
+    blocks = []
+    for start in range(0, len(rows), chunk_size):
+        label = ""
+        if chunk_label and (label_first or start > 0):
+            suffix = "" if start == 0 else " (continued)"
+            label = f'<h3 class="continued">{escape(chunk_label + suffix)}</h3>'
+        block = t(headers, rows[start:start + chunk_size], widths, cls)
+        blocks.append(f'<div class="table-block">{label}{block}</div>')
+    return "".join(blocks)
 
 
 def code(value: str) -> str:
@@ -472,15 +493,15 @@ def gap_files(gap_id: str) -> str:
 
 
 def blocker_tables() -> tuple[str, str]:
-    files_table = t(
+    files_table = chunked_t(
         ["ID / status", "Gap / affected fields", "Required file templates"],
         [[f"<b>{r[0]}</b><br>{r[1]}", f"<b>{r[2]}</b><br>{r[3]}", gap_files(r[0])] for r in GAPS],
-        ["18%", "34%", "48%"], "dense",
+        ["18%", "34%", "48%"], "dense", 4,
     )
-    action_table = t(
+    action_table = chunked_t(
         ["ID", "Exactly where to fix", "Owner", "Proof to close"],
         [[f"<b>{r[0]}</b>", r[4], f"<b>{r[5]}</b>", r[6]] for r in GAPS],
-        ["10%", "40%", "20%", "30%"], "dense",
+        ["10%", "40%", "20%", "30%"], "dense", 4,
     )
     return files_table, action_table
 
@@ -510,7 +531,7 @@ def audit_html() -> str:
 <div class="callout"><b>Key point:</b> “present” does not mean “usable.” A value from a prohibited source is a blocker even when it is populated.</div>
 
 <h2>3. What the code does now</h2>
-{t(["Control", "Current behavior", "Truth / limitation"], [
+{chunked_t(["Control", "Current behavior", "Truth / limitation"], [
     ["Production build", code("nport build") + " reads canonical fund_config.txt, filing_data.txt, and holdings.csv only.", "It no longer calls the U.S. Bank custodian or EagleSTAR parsers."],
     ["Fund review", code("prepare-review") + " creates one workbook under the fund and period.", "It contains exact locations for every fund field and surfaced holding exception."],
     ["Evidence gate", code("review-status") + " checks values, dispositions, sources, cutoffs, hashes, counts, timestamps, and approvals.", "Known U.S. Bank/EagleSTAR labels and legacy repository paths are rejected."],
@@ -518,7 +539,7 @@ def audit_html() -> str:
     ["Legacy/write workflow", "masters, split, mergehumanreview, enrich, merge, new-filing, and the master-specific commands exit with an error.", "They either consume prohibited material or cannot authenticate independent origin."],
     ["Reference comparison", code("nport compare-reference") + " is read-only.", "It reports structural differences and never writes filing inputs."],
     ["Residual limitation", "Manifest checks use labels, paths, dates, hashes, counts, and approval.", "They cannot prove origin if a prohibited file is deliberately moved and relabelled; authenticated connectors remain required."],
-], ["20%", "40%", "40%"])}
+], ["20%", "40%", "40%"], "", 4)}
 
 <h2>4. Complete open-blocker register</h2>
 <p>These are the 13 tracked gaps. Engineering status and data status are separate: a workflow can be implemented while the filing remains blocked because the independent value has not been supplied.</p>
@@ -529,13 +550,13 @@ def audit_html() -> str:
 
 <h2>5. Where a human enters values</h2>
 <div class="callout good"><b>Implemented location:</b> <code>data/funds/&lt;fund&gt;/filings/&lt;period&gt;/human_review.xlsx</code>. This is the only workbook used by the new review path.</div>
-{t(["Sheet", "Row key", "Editable values", "Covers", "Release rule"], review_rows, ["15%", "16%", "30%", "19%", "20%"], "dense")}
+{chunked_t(["Sheet", "Row key", "Editable values", "Covers", "Release rule"], review_rows, ["15%", "16%", "30%", "19%", "20%"], "dense", 4)}
 <p>The workbook is generated for one fund and one period from the independently supplied positions file. It is a controlled queue: Sources establishes the evidence, FundFields and HoldingFields record decisions, Approvals records two-person sign-off, and Reconciliation records automated results. It is not a source of facts by itself.</p>
 <h3>What a human may and may not do</h3>
 <ul><li>May: enter a value supported by an approved independent source.</li><li>May: mark a conditional field NOT_APPLICABLE only with a source, reviewer, timestamp, and reason.</li><li>May not: invent a zero, N/A, policy choice, identifier, term, or classification.</li><li>May not: cite or copy U.S. Bank, EagleSTAR, a prepared filing, or a file derived from them.</li><li>May not: type the base position population into Excel; it must be supplied with <code>--positions</code>.</li></ul>
 
 <h2>6. Correct operating sequence</h2>
-{t(["Step", "Actor", "Deterministic action", "Completion condition"], [
+{chunked_t(["Step", "Actor", "Deterministic action", "Completion condition"], [
     ["1. Intake", "Operations", "Place the actual independent positions file and optional orders file in the fund-period intake folder.", "Real files exist; their origin is independent of U.S. Bank."],
     ["2. Template", "Operations", code("nport prepare-review <fund> <period> --positions <file> [--orders <file>]"), "The fund-period human_review.xlsx exists."],
     ["3. Evidence", "Preparer + source owner", "Complete Sources with the actual system, path, cutoff, hash/count, and preparation evidence.", "Every used source row is complete and PENDING or APPROVED."],
@@ -544,7 +565,7 @@ def audit_html() -> str:
     ["6. Gate", "Operations", code("nport review-status <fund> <period>"), "Command reports zero blockers."],
     ["7. Build", "Operations", code("nport build <fund> <period> --from-review"), "Versioned clean bundle and validated XML are written."],
     ["8. Compare", "Reviewer", "Compare the independent XML with U.S. Bank output on the same fund/date only.", "Differences are documented; comparison data is never merged back."],
-], ["10%", "18%", "45%", "27%"], "dense")}
+], ["10%", "18%", "45%", "27%"], "dense", 4)}
 <div class="callout"><b>All-fund operation:</b> repeat the sequence independently for every fund. The runbook contains copy/paste PowerShell loops that discover fund folders from <code>data/intake/&lt;period&gt;/</code>, create one workbook per fund, stop on blocked reviews, and build only review-ready funds. FDRS is an example ticker, not a scope limitation.</div>
 <div class="callout"><b>Field coverage:</b> the runbook contains a generated trace for all 170 accepted canonical fields: 30 fund-configuration fields, 56 filing-level fields, and 84 holding fields. It separates the actual current/legacy writer from the new review location.</div>
 
@@ -573,8 +594,10 @@ def runbook_html() -> str:
             holding_rows[list(_HOLDINGS_KEY_MAP).index(external)]
         )
     holding_trace = "".join(
-        f"<h3>{escape(group.replace('_', ' ').title())}</h3>" +
-        t(trace_headers, rows, trace_widths, "dense")
+        chunked_t(
+            trace_headers, rows, trace_widths, "dense", 4,
+            group.replace('_', ' ').title(), True,
+        )
         for group, rows in holding_groups.items()
     )
     batch_prepare = escape(r'''$period = "2026-06"
@@ -630,20 +653,21 @@ foreach ($book in Get-ChildItem -Path ".\data\funds\*\filings\$period\human_revi
 
 <h2>3. What the source labels mean</h2>
 <div class="callout"><b>Deterministic rule:</b> these are dataset categories, not claims that a system or file exists. The real system name, real path, cutoff, hash, count, preparer, and reviewer are supplied on the Sources sheet for the specific fund and period.</div>
-{t(["Evidence category", "Dataset value", "Can support", "When required", "Who records the actual source"], source_rows, ["16%", "18%", "24%", "19%", "23%"], "dense")}
+{chunked_t(["Evidence category", "Dataset value", "Can support", "When required", "Who records the actual source"], source_rows, ["16%", "18%", "24%", "19%", "23%"], "dense", 3)}
 
 <h2>4. Exact operating workflow</h2>
+<div class="callout good"><b>Use this order every time.</b> Do not skip ahead. A command that returns a blocker means stop, correct the named workbook row or source evidence, and rerun that command.</div>
 <div class="steps">
-<div class="step"><h3>Step 1 - Set the fund and period</h3><p>Run from the repository root. Replace <code>FDRS</code> and <code>2026-06</code> with the real fund and filing period. The examples below do not assert that the example files exist.</p><div class="cmd">Set-Location "C:\Users\damie\nportvalidation"</div></div>
-<div class="step"><h3>Step 2 - Prepare independent intake files</h3><p>Place independently generated evidence under <code>data/intake/&lt;period&gt;/&lt;fund&gt;/</code>. The positions CSV must use the canonical headers printed by the schema command. Create/redeem input, if used, must have exactly <code>Ticker</code>, <code>Side</code>, <code>Trade Date</code>, <code>Notional</code>, and <code>Status</code> headers.</p><div class="cmd">&amp; ".\.venv\Scripts\nport.exe" schema</div><p><b>Do not continue</b> if the file was produced by, copied from, or derived from U.S. Bank/EagleSTAR.</p></div>
-<div class="step"><h3>Step 3 - Generate the review template</h3><p>The command creates or refreshes one workbook and preserves completed review cells. Omit <code>--orders</code> if no independent order export exists.</p><div class="cmd">&amp; ".\.venv\Scripts\nport.exe" prepare-review FDRS 2026-06 --positions ".\data\intake\2026-06\fdrs\positions.csv" --orders ".\data\intake\2026-06\fdrs\create_redeem_orders.csv"</div><p>Expected workbook: <code>data/funds/fdrs/filings/2026-06/human_review.xlsx</code>.</p></div>
-<div class="step"><h3>Step 4 - Register every evidence file</h3><p>In Sources, use a unique sourceId and enter the real dataset, sourceType, sourceSystem, sourcePath, sourceAsOf, acquiredAt, recordCount, preparedBy, reviewedBy, reviewedAt, status, and comment. The reviewer must differ from the preparer. Use ISO-8601 timestamps. Status must remain PENDING until reviewed.</p><p>For manually added source paths, save the workbook and rerun the same prepare-review command. The system fills a blank SHA-256 and CSV/TSV record count; it resets the source to PENDING if the file hash changes.</p></div>
-<div class="step"><h3>Step 5 - Resolve fund-level rows</h3><p>In FundFields, filter status to MISSING or NEEDS_REVIEW. For each applicable row, enter proposedValue, sourceId, sourceAsOf, reviewer, reviewedAt, and comment; then set status to APPROVED. For a genuinely inapplicable conditional field, set NOT_APPLICABLE and still provide sourceId, reviewer, reviewedAt, and the reason in comment. Do not edit SYSTEM_DERIVED or SYSTEM_CONTROL rows.</p></div>
-<div class="step"><h3>Step 6 - Resolve holding-level rows</h3><p>In HoldingFields, work only the generated recordKey/fieldName rows. Present non-sensitive base fields stay traceable to the approved POSITIONS source. Missing required fields and sensitive debt, derivative, option, swap, reference-instrument, and liquidity fields are surfaced for evidence-backed review.</p></div>
-<div class="step"><h3>Step 7 - Approve the package</h3><p>In Approvals, PREPARER and REVIEWER must be two different named people. Each enters an ISO-8601 approvedAt value and sets status to APPROVED.</p></div>
-<div class="step"><h3>Step 8 - Run the blocker gate</h3><div class="cmd">&amp; ".\.venv\Scripts\nport.exe" review-status FDRS 2026-06</div><p>Repeat steps 4-7 until this command reports zero blockers. A populated value still blocks if its source is prohibited, stale, changed, unapproved, untraceable, or unreconciled.</p></div>
-<div class="step"><h3>Step 9 - Finalize and build</h3><div class="cmd">&amp; ".\.venv\Scripts\nport.exe" build FDRS 2026-06 --from-review</div><p>This writes a new versioned clean bundle under <code>data/builds/fdrs/2026-06/&lt;run-id&gt;/</code> and then generates/validates XML. The bundle contains fund_config.txt, filing_data.txt, holdings.csv, source_manifest.csv, field_provenance.csv, reconciliation.csv, and review_receipt.json.</p></div>
-<div class="step"><h3>Step 10 - Compare only after the independent build</h3><p>Use comparison artifacts only after the independent XML exists. Match fund identity, report period end, and report date before interpreting differences. Never copy a comparison value back into the review workbook.</p></div>
+<div class="step"><h3>Step 1 - Check the input format</h3><p><span class="label">Run:</span></p><div class="cmd">Set-Location "C:\Users\damie\nportvalidation"
+&amp; ".\.venv\Scripts\nport.exe" schema</div><p><span class="label">System:</span> Prints the required and conditional <code>positions.csv</code> columns.</p><p><span class="label">Human:</span> Export independent positions to <code>data/intake/&lt;period&gt;/&lt;fund&gt;/positions.csv</code>. If available, place the independent order file beside it as <code>create_redeem_orders.csv</code>.</p><p><span class="label">Stop if:</span> Either file came from or was derived from U.S. Bank or EagleSTAR.</p></div>
+<div class="step"><h3>Step 2 - Create the fund review workbook</h3><p><span class="label">Run:</span></p><div class="cmd">&amp; ".\.venv\Scripts\nport.exe" prepare-review FDRS 2026-06 --positions ".\data\intake\2026-06\fdrs\positions.csv" --orders ".\data\intake\2026-06\fdrs\create_redeem_orders.csv"</div><p><span class="label">System:</span> Creates or refreshes <code>data/funds/fdrs/filings/2026-06/human_review.xlsx</code>. Omit <code>--orders</code> when no independent order export exists.</p><p><span class="label">Human:</span> Confirm the printed fund, period, positions path, and workbook path are correct.</p><p><span class="label">Pass when:</span> The command prints <code>Prepared:</code> and the expected workbook path.</p></div>
+<div class="step"><h3>Step 3 - Register source evidence</h3><p><span class="label">Run:</span> No new command. Open <code>human_review.xlsx</code> and use the <code>Sources</code> sheet.</p><p><span class="label">System:</span> Carries the positions/orders paths, SHA-256, and record counts into the workbook. If a source file changes, its status returns to PENDING.</p><p><span class="label">Human:</span> For every source actually used, complete sourceSystem, sourcePath, sourceAsOf, acquiredAt, preparedBy, reviewedBy, reviewedAt, status, and comment. The reviewer must be a different person.</p><p><span class="label">Pass when:</span> Every cited source is independent, period-aligned, complete, and APPROVED.</p></div>
+<div class="step"><h3>Step 4 - Resolve the field review queue</h3><p><span class="label">Run:</span> No new command. In the workbook, filter <code>FundFields</code> and <code>HoldingFields</code> to MISSING or NEEDS_REVIEW.</p><p><span class="label">System:</span> Shows the exact targetFile, recordKey, fieldName, current value, and gap ID.</p><p><span class="label">Human:</span> Enter proposedValue, sourceId, sourceAsOf, reviewer, reviewedAt, and comment. Use APPROVED for a supported value. Use NOT_APPLICABLE only with evidence and a factual reason. Do not edit SYSTEM_DERIVED or SYSTEM_CONTROL rows.</p><p><span class="label">Pass when:</span> No applicable row remains MISSING or NEEDS_REVIEW.</p></div>
+<div class="step"><h3>Step 5 - Complete two-person approval</h3><p><span class="label">Run:</span> No new command. Use the workbook's <code>Approvals</code> sheet.</p><p><span class="label">Human:</span> One person completes PREPARER; a different person completes REVIEWER. Both enter name, ISO-8601 approvedAt, APPROVED status, and comment.</p><p><span class="label">Pass when:</span> Both approval rows are complete and the names differ.</p></div>
+<div class="step"><h3>Step 6 - Run the blocker gate</h3><p><span class="label">Run:</span></p><div class="cmd">&amp; ".\.venv\Scripts\nport.exe" review-status FDRS 2026-06</div><p><span class="label">System:</span> Prints every unresolved field, source, approval, cutoff, hash, count, or reconciliation issue.</p><p><span class="label">Human:</span> Fix the exact row named after <code>Fix:</code>, save the workbook, and rerun this command.</p><p><span class="label">Pass when:</span> The command prints <code>READY - zero review blockers.</code></p></div>
+<div class="step"><h3>Step 7 - Test without retaining output</h3><p><span class="label">Run:</span></p><div class="cmd">&amp; ".\.venv\Scripts\nport.exe" build FDRS 2026-06 --from-review --dry-run</div><p><span class="label">System:</span> Finalizes in temporary storage, validates canonical data, generates XML, and runs XSD validation.</p><p><span class="label">Human:</span> Read every reported error. Return to the named source or workbook row; never patch generated XML.</p><p><span class="label">Pass when:</span> The command prints <code>DRY RUN PASSED</code>.</p></div>
+<div class="step"><h3>Step 8 - Build, then compare</h3><p><span class="label">Run:</span></p><div class="cmd">&amp; ".\.venv\Scripts\nport.exe" build FDRS 2026-06 --from-review
+&amp; ".\.venv\Scripts\nport.exe" compare-reference --internal ".\output\FDRS_2026-06.xml" --reference "&lt;aligned-reference.xml&gt;"</div><p><span class="label">System:</span> Writes a versioned clean bundle under <code>data/builds/fdrs/2026-06/&lt;run-id&gt;/</code>, writes XML under <code>output/</code>, and performs a read-only comparison.</p><p><span class="label">Human:</span> Confirm the internal and reference outputs use the same fund identity and report date. Document gaps; never copy comparison values back into the filing.</p><p><span class="label">Pass when:</span> The clean bundle, receipt, validated XML, and documented comparison all exist.</p></div>
 </div>
 
 <h3>Run the workflow for every fund</h3>
@@ -657,7 +681,7 @@ foreach ($book in Get-ChildItem -Path ".\data\funds\*\filings\$period\human_revi
 <div class="cmd">{batch_build}</div>
 
 <h3>Complete command reference</h3>
-{t(["Command", "Stage", "What it does", "Writes data?"], [
+{chunked_t(["Command", "Stage", "What it does", "Writes data?"], [
     [code("nport schema"), "Intake design", "Prints every canonical positions.csv column, type, and applicability rule.", "No"],
     [code("nport prepare-review <fund> <period> --positions <file> [--orders <file>]"), "Template", "Creates or refreshes the fund-period review workbook and source rows.", "Yes - human_review.xlsx"],
     [code("nport review-status <fund> <period>"), "Gate", "Lists every unresolved field, evidence, approval, source, and reconciliation blocker.", "No"],
@@ -667,11 +691,11 @@ foreach ($book in Get-ChildItem -Path ".\data\funds\*\filings\$period\human_revi
     [code("nport compare-reference --internal <xml> --reference <xml>"), "Post-build comparison", "Performs a read-only structural comparison after dates and fund identity are aligned.", "No filing inputs"],
     [code("nport check-schema"), "Maintenance", "Checks the local N-PORT schema files and version.", "Cache only when applicable"],
     [code("nport pull --ticker <ticker> --list"), "External research", "Lists recent EDGAR N-PORT filings; it is not an input adapter.", "No, unless an explicit output download is requested"],
-], ["38%", "15%", "33%", "14%"], "dense")}
+], ["38%", "15%", "33%", "14%"], "dense", 4)}
 <p><b>Disabled write paths:</b> masters, split, mergehumanreview, enrich, merge, new-filing, build-master, split-master, build-filing-master, and split-filing-master. Do not use them for the independent service.</p>
 
 <h2>5. Review workbook template</h2>
-{t(["Sheet", "Key", "What the human edits", "Result", "Release rule"], [
+{chunked_t(["Sheet", "Key", "What the human edits", "Result", "Release rule"], [
     ["Summary", "Fund + period", "Nothing", "Shows scope, stop rule, and next command", "Read-only"],
     ["GapGuide", "gapId", "Nothing", "Explains all 13 gaps, evidence template, and exact destination", "Read-only"],
     ["FundFields", "targetFile + fieldName", "proposedValue, sourceId, sourceAsOf, status, reviewer, reviewedAt, comment", "Approved config and filing-level values", "Every required row resolved"],
@@ -679,18 +703,18 @@ foreach ($book in Get-ChildItem -Path ".\data\funds\*\filings\$period\human_revi
     ["Sources", "sourceId", "Actual system/path/cutoff/hash/count plus dual-review evidence", "Generated source manifest", "Every used source approved, independent, and unchanged"],
     ["Approvals", "role", "Name, approvedAt, status, comment", "Package approval", "Different preparer and reviewer"],
     ["Reconciliation", "check", "Nothing; correct upstream values/evidence", "NAV equation and position-count results", "Every automated check passes"],
-], ["15%", "17%", "30%", "23%", "15%"], "dense")}
+], ["15%", "17%", "30%", "23%", "15%"], "dense", 4)}
 <div class="callout danger"><b>The workbook is a controlled exception and approval layer.</b> It does not make unsupported data true. It only accepts a value when the row points to an approved source and the required review evidence is complete.</div>
 
 <h2>6. Status and timestamp rules</h2>
-{t(["Value", "Exact meaning", "Required evidence"], [
+{chunked_t(["Value", "Exact meaning", "Required evidence"], [
     ["MISSING", "No usable value has been supplied.", "None yet; remains a blocker when applicable."],
     ["NEEDS_REVIEW", "A value exists but has not been approved.", "Independent source plus reviewer decision."],
     ["APPROVED", "The proposed/current value is supported and accepted.", "sourceId, matching sourceAsOf, reviewer, reviewedAt, approved Sources row."],
     ["NOT_APPLICABLE", "A conditional field does not apply to this fund/holding.", "sourceId, reviewer, reviewedAt, and a factual reason in comment."],
     ["SYSTEM_DERIVED", "The system calculates the value from approved period/policy inputs.", "No manual override."],
     ["SYSTEM_CONTROL", "The system owns the release-state value.", "No manual override."],
-], ["20%", "40%", "40%"], "dense")}
+], ["20%", "40%", "40%"], "dense", 3)}
 <p>Use ISO-8601, for example <code>2026-08-03T16:30:00-05:00</code>. The example is a format illustration, not an asserted review time.</p>
 
 <h2>7. Current blocker checklist and exact fix location</h2>
@@ -706,18 +730,18 @@ foreach ($book in Get-ChildItem -Path ".\data\funds\*\filings\$period\human_revi
 
 <h2 class="page">9. Exhaustive field trace - fund configuration</h2>
 <p>All {len(config_rows)} accepted fund-configuration fields are listed. <code>requiredSources</code> is derived from approved Sources rows in the new workflow; it is not typed as business data.</p>
-{t(trace_headers, config_rows, trace_widths, "dense")}
+{chunked_t(trace_headers, config_rows, trace_widths, "dense", 4, "Fund configuration")}
 
 <h2 class="page">10. Exhaustive field trace - filing-level data</h2>
 <p>All {len(filing_rows)} accepted filing-level fields are listed. A legacy constant is reported as a constant; it is not silently reclassified as sourced data.</p>
-{t(trace_headers, filing_rows, trace_widths, "dense")}
+{chunked_t(trace_headers, filing_rows, trace_widths, "dense", 4, "Filing-level data")}
 
 <h2 class="page">11. Exhaustive field trace - holdings</h2>
 <p>All {len(holding_rows)} accepted holdings fields are listed and grouped by filing condition. Present base values remain tied to the approved POSITIONS source; missing required and review-sensitive values are surfaced in HoldingFields.</p>
 {holding_trace}
 
-<h2>12. Release decision</h2>
-<p>The code may build only after <code>review-status</code> returns zero blockers. That requires applicable fields to be resolved from approved independent sources, source cutoffs to match the report period, source hashes and counts to match, two-person approval to be complete, automated reconciliation to pass, canonical validation to pass, and XSD validation to pass. The local workflow cannot prove that a person did not copy and relabel a prohibited value; origin attestation remains a human governance control.</p>
+<div class="keep"><h2>12. Release decision</h2>
+<p>The code may build only after <code>review-status</code> returns zero blockers. That requires applicable fields to be resolved from approved independent sources, source cutoffs to match the report period, source hashes and counts to match, two-person approval to be complete, automated reconciliation to pass, canonical validation to pass, and XSD validation to pass. The local workflow cannot prove that a person did not copy and relabel a prohibited value; origin attestation remains a human governance control.</p></div>
 """
     return shell("N-PORT In-House Runbook", "A field-by-field operating guide showing what supplies each value, exactly where it is entered, how human review works, and what blocks release.", body)
 
