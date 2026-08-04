@@ -502,8 +502,17 @@ def prepare_inputs(
     existing_sources = _read_sheet(existing, "Sources", data_only=False)
     existing_reconciliation = _read_sheet(existing, "ReconciliationInputs", data_only=False)
 
-    position_path = Path(positions).resolve() if positions else None
-    order_path = Path(orders).resolve() if orders else None
+    def resolve_cli_path(value: str | Path | None) -> Path | None:
+        if value is None:
+            return None
+        # PDF viewers may copy a visual line wrap as a literal CR/LF inside a
+        # quoted PowerShell path. Windows paths cannot contain those characters,
+        # so join wrapped lines before any filesystem operation.
+        cleaned = "".join(part.strip() for part in str(value).splitlines()).strip()
+        return Path(cleaned).resolve() if cleaned else None
+
+    position_path = resolve_cli_path(positions)
+    order_path = resolve_cli_path(orders)
     bloomberg_rows = _bloomberg_rows(position_path, base.name, period)
     sources: list[dict[str, str]] = []
     for sid, dataset, stype, path in (

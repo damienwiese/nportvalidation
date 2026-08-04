@@ -93,6 +93,20 @@ def test_prohibited_us_bank_source_is_reported_as_blocker(tmp_path, fdrs_dir):
     assert "INPUT_SOURCE_PROHIBITED" in {item.code for item in result["blockers"]}
 
 
+def test_prepare_normalizes_pdf_line_break_inside_positions_path(tmp_path, fdrs_dir):
+    fund_dir = tmp_path / "fdrs"
+    fund_dir.mkdir()
+    shutil.copyfile(fdrs_dir / "fund_config.txt", fund_dir / "fund_config.txt")
+    positions = tmp_path / "internal_positions.csv"
+    shutil.copyfile(fdrs_dir / "filings" / "2025-12" / "holdings.csv", positions)
+    copied_from_pdf = f"{positions.parent}\n\\{positions.name}"
+
+    workbook = prepare_inputs(fund_dir, "2025-12", positions=copied_from_pdf)
+
+    assert workbook.is_file()
+    assert _sheet_rows(workbook, "Sources")[0]["sourcePath"] == str(positions.resolve())
+
+
 def test_missing_reconciliation_input_sheet_fails_closed(tmp_path, fdrs_dir):
     fund_dir = tmp_path / "fdrs"
     fund_dir.mkdir()
