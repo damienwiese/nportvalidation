@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from reportlab import rl_config
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import letter
@@ -24,6 +25,8 @@ from reportlab.platypus import (
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
+# Stable timestamps and document IDs keep repeat generations byte-for-byte reproducible.
+rl_config.invariant = 1
 NAVY = colors.HexColor("#17324D")
 TEAL = colors.HexColor("#2B6D73")
 INK = colors.HexColor("#283849")
