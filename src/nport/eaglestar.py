@@ -1,7 +1,6 @@
-"""US Bank EagleSTAR fund-accounting export -> per-fund N-PORT pre-fill.
+"""EagleSTAR fund-accounting export -> per-fund N-PORT pre-fill.
 
-COMPARISON-ONLY LEGACY ADAPTER. Production CLI paths are required to fail closed
-before calling this module. It remains solely to inspect and compare received output.
+This is the operating fund-accounting adapter used by ``nport masters``.
 
 Mirrors ``ap_orders.py``: drop the Google Takeout ``.zip`` (or a raw ``.mbox``)
 into ``data/fund_accounting/`` and ``masters`` extracts the daily PVal /

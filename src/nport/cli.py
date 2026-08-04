@@ -61,7 +61,7 @@ def main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="command")
 
     # ── The 3 commands you use every month ───────────────────────
-    ms = sub.add_parser("masters", help="DISABLED: legacy U.S. Bank comparison adapter")
+    ms = sub.add_parser("masters", help="Load custodian, EagleSTAR, and create/redeem inputs")
     ms.add_argument("pos", nargs="*", help="[period] — defaults to the latest custodian file")
     ms.add_argument("--period", default=None, help="Filing period (default: latest custodian file)")
     ms.add_argument("--custodian", default=None, help="Custodian CSV (default: data/custodian/<period>_holdings.csv)")
@@ -71,11 +71,11 @@ def main(argv: list[str] | None = None) -> None:
     ms.add_argument("--dry-run", action="store_true", help="Show what would be built")
 
     mhr = sub.add_parser("mergehumanreview", aliases=["merge-human-review"],
-                         help="DISABLED until review is generated from independent inputs")
+                         help="Create or apply the centralized human-review workbook")
     mhr.add_argument("pos", nargs="*", help="[period] — defaults to the latest custodian file")
     mhr.add_argument("--period", default=None, help="Filing period (default: latest custodian file)")
 
-    sp = sub.add_parser("split", help="DISABLED: current masters contain U.S. Bank-derived data")
+    sp = sub.add_parser("split", help="Write reviewed master data to each fund")
     sp.add_argument("pos", nargs="*", help="[period] — defaults to the latest custodian file")
     sp.add_argument("--period", default=None, help="Filing period (default: latest custodian file)")
     sp.add_argument("--dry-run", action="store_true", help="Report targets without writing")
@@ -128,9 +128,10 @@ def main(argv: list[str] | None = None) -> None:
     mg.add_argument("--output", required=True, help="Output canonical holdings CSV path (or directory with --split)")
     mg.add_argument("--split", action="store_true", help="Write split CSVs (base + debt + derivatives) instead of one flat file")
 
-    ig = sub.add_parser("ingest", aliases=["build"], help="Build XML from independently sourced canonical inputs")
+    ig = sub.add_parser("ingest", aliases=["build"], help="Build XML from the reviewed per-fund inputs")
     ig.add_argument("pos", nargs="*", help="[fund] [period] — no fund = every fund for the period")
-    ig.add_argument("--custodian", default=None, help="PROHIBITED compatibility flag; cannot feed a build")
+    ig.add_argument("--custodian", default=None,
+                    help="Not accepted here; load custody first with `nport masters`")
     ig.add_argument("--fund-dir", default=None, help="Fund directory (default: data/funds/<fund>)")
     ig.add_argument("--period", default=None, help="Filing period (default: latest canonical fund period)")
     ig.add_argument("--account", default=None, help="Account ticker override")
@@ -140,13 +141,13 @@ def main(argv: list[str] | None = None) -> None:
     ig.add_argument("--verbose", action="store_true")
     ig.add_argument("--dry-run", action="store_true", help="Transform and validate only, do not write XML")
     ig.add_argument("--registry", default="data/master/fund_registry.csv", help="Approved in-house fund registry")
-    ig.add_argument("--source-manifest", default=None, help="Required evidence CSV for independent sources")
+    ig.add_argument("--source-manifest", default=None, help="Optional provenance audit CSV")
     ig.add_argument("--from-inputs", action="store_true",
                     help="Validate filing_inputs.xlsx and build only from that clean package")
     ig.add_argument("--from-review", action="store_true", help=argparse.SUPPRESS)
 
     pr = sub.add_parser("prepare", aliases=["prepare-review"],
-                        help="Create/refresh filing_inputs.xlsx, including Bloomberg formulas")
+                        help="Legacy single-fund workbook; monthly workflow uses `masters`")
     pr.add_argument("pos", nargs="*", help="<fund> <period>")
     pr.add_argument("--fund-dir", default=None)
     pr.add_argument("--period", default=None)
@@ -217,7 +218,7 @@ def main(argv: list[str] | None = None) -> None:
     nf.add_argument("--account", default=None, help="Account ticker (default: all fund subdirs)")
     nf.add_argument("--all", action="store_true", dest="all_accounts", help="Process all fund subdirs")
 
-    sub.add_parser("guide", help="DISABLED: use docs/NPORT_Runbook.pdf")
+    sub.add_parser("guide", help="Print the complete monthly workflow")
 
     args = parser.parse_args(argv)
     if args.command is None:
@@ -868,7 +869,7 @@ def _ingest(args) -> None:
 
 
 def _ingest_one(args) -> None:
-    """Build one fund only from independently sourced canonical files."""
+    """Build one fund from the reviewed per-fund files written by ``nport split``."""
     pos_account, pos_period = _split_positionals(getattr(args, "pos", None))
     args.period = _resolve_period(pos_period or args.period)
     args.account = pos_account or args.account
@@ -878,7 +879,8 @@ def _ingest_one(args) -> None:
         print("ERROR: specify which fund, e.g. `nport build fdrs`.", file=sys.stderr)
         sys.exit(1)
     if getattr(args, "custodian", None):
-        print("ERROR: --custodian is prohibited; U.S. Bank files are comparison-only.",
+        print("ERROR: --custodian is not a build argument. Load it first with "
+              "`nport masters <period>`, then run mergehumanreview, split, and build.",
               file=sys.stderr)
         sys.exit(1)
     if getattr(args, "from_inputs", False) or getattr(args, "from_review", False):
@@ -1231,7 +1233,6 @@ def _resolve_fund_accounting(explicit: str | None) -> Path | None:
 
 def _masters(args) -> None:
     """STEP 1: build BOTH master workbooks (security + filing) from the custodian."""
-    _block_external_adapter("masters")
     _, pos_period = _split_positionals(getattr(args, "pos", None))
     period = _resolve_period(pos_period or getattr(args, "period", None))
     custodian = _resolve_custodian(args.custodian, period)
@@ -1241,6 +1242,11 @@ def _masters(args) -> None:
     ap_orders = _resolve_ap_orders(args.ap_orders, period)
     export = None if getattr(args, "no_fund_accounting", False) else \
         _resolve_fund_accounting(getattr(args, "fund_accounting", None))
+
+    print(f"  Inputs for {period}:")
+    print(f"    Custodian:       {custodian}")
+    print(f"    EagleSTAR:       {export if export else 'not provided'}")
+    print(f"    Create/redeem:   {ap_orders if ap_orders else 'not provided'}")
 
     if args.dry_run:
         flows = f" + {ap_orders}" if ap_orders else " (no AP orders file)"
@@ -1260,7 +1266,8 @@ def _masters(args) -> None:
 
     rows = parse_custodian_csv(custodian)
     try:
-        stats = refresh_master(rows, _SECURITY_MASTER_PATH, Path("data/RealXMLs"), None,
+        # Prepared/reference XML is comparison-only. It is never a master input.
+        stats = refresh_master(rows, _SECURITY_MASTER_PATH, None, None,
                                formulas=True, overwrite_formulas=False,
                                deriv_values=eag.derivatives if eag else None)
     except PermissionError:
@@ -1292,7 +1299,6 @@ def _split(args) -> None:
     Human-reviewed reference data is merged into the masters first by `nport mergehumanreview`,
     so split is a straight projection of the (merged) masters.
     """
-    _block_external_adapter("split")
     _, pos_period = _split_positionals(getattr(args, "pos", None))
     period = _resolve_period(pos_period or getattr(args, "period", None))
     fund_dir = _DEFAULT_FUNDS_DIR
@@ -1337,7 +1343,6 @@ def _mergehumanreview(args) -> None:
     Then `nport split`. Merging freezes the Bloomberg-populated cells to literal values, so
     re-run `nport masters` if you ever need live =BDP formulas again.
     """
-    _block_external_adapter("mergehumanreview")
     from nport import humanreview
     from nport.filing_master import merge_review_into_filing_master
     from nport.master_sheet import merge_review_into_master, read_master_xlsx
@@ -1577,24 +1582,36 @@ def _new_filing(args) -> None:
 
 def _guide(args) -> None:
     print("""\
-Independent N-PORT Filing
-=========================
+N-PORT Monthly Workflow
+=======================
 
-U.S. Bank custody, EagleSTAR, prepared filings, email attachments, and all files
-derived from them are comparison-only. They cannot populate the in-house filing.
+INPUTS
+  data/custodian/          custodian positions CSV
+  data/fund_accounting/    EagleSTAR .zip or .mbox
+  data/orders/             create/redeem orders CSV
 
-Required before build:
-  1. Independently sourced canonical fund_config.txt, filing_data.txt, holdings.csv.
-  2. Approved data/master/fund_registry.csv.
-  3. Source manifest with path, report-date cutoff, hash, count, and approver.
+1. LOAD THE INPUTS
+  nport masters 2026-06
+  The command prints the exact three files it selected and creates:
+    data/master/security_master.xlsx
+    data/master/filing_master.xlsx
 
-Safe commands:
-  nport preflight <fund> <period> --registry <file> --source-manifest <file>
-  nport build <fund> <period> --registry <file> --source-manifest <file>
-  nport compare-reference --internal <xml> --reference <xml>
+2. LET BLOOMBERG POPULATE
+  Open both master workbooks on the Bloomberg machine. Wait for the formulas to
+  finish, then save and close both files.
 
-Legacy master, split, merge, enrich, and carry-forward writers are disabled.
-See docs/NPORT_Runbook.pdf for the field-level operating procedure.
+3. COMPLETE HUMAN REVIEW
+  nport mergehumanreview 2026-06
+  Open data/humanreview/2026-06_review.xlsx and fill every required blank.
+  Run the same command again to apply the completed values:
+  nport mergehumanreview 2026-06
+
+4. WRITE FUND FILES AND BUILD XML
+  nport split 2026-06
+  nport build
+
+Use `nport build fdrs 2026-06` to build one fund. Custodian and EagleSTAR files
+are loaded only in step 1; do not invent or manually create positions.csv.
 """)
     return
     """Print the step-by-step N-PORT filing guide."""

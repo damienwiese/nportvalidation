@@ -774,8 +774,8 @@ class TestIngestAccount:
 
 
 class TestIngestCLI:
-    def test_custodian_is_blocked_even_in_dry_run(self, tmp_path, capsys):
-        """A prohibited custodian file cannot enter through the TEST/dry-run path."""
+    def test_custodian_must_be_loaded_by_masters_even_in_dry_run(self, tmp_path, capsys):
+        """Custody is a masters-stage input, never a direct build argument."""
         from nport.cli import main
 
         # Write custodian CSV
@@ -802,10 +802,11 @@ class TestIngestCLI:
                 "--dry-run",
             ])
         captured = capsys.readouterr()
-        assert "--custodian is prohibited" in captured.err
+        assert "--custodian is not a build argument" in captured.err
+        assert "nport masters <period>" in captured.err
 
-    def test_custodian_is_rejected_before_account_processing(self, tmp_path, capsys):
-        """Source boundary is checked before prohibited rows can be inspected."""
+    def test_custodian_is_redirected_before_account_processing(self, tmp_path, capsys):
+        """Direct build usage is redirected before account processing."""
         from nport.cli import main
 
         csv_path = _write_csv(tmp_path, [_EQUITY_ROW])
@@ -822,7 +823,7 @@ class TestIngestCLI:
                 "--account", "ZZZZ",
             ])
         captured = capsys.readouterr()
-        assert "--custodian is prohibited" in captured.err
+        assert "--custodian is not a build argument" in captured.err
 
 
 # ── TestGenerateFilingTemplate ─────────────────────────────────
@@ -1011,6 +1012,8 @@ class TestGuideCLI:
 
         main(["guide"])
         captured = capsys.readouterr()
-        assert "Independent N-PORT Filing" in captured.out
-        assert "U.S. Bank" in captured.out
+        assert "N-PORT Monthly Workflow" in captured.out
+        assert "data/custodian/" in captured.out
+        assert "EagleSTAR" in captured.out
+        assert "mergehumanreview" in captured.out
         assert "nport build" in captured.out

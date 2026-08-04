@@ -1,7 +1,7 @@
 """One global master spreadsheet → per-fund security masters.
 
-COMPARISON-ONLY LEGACY ADAPTER. This workbook is U.S. Bank-derived and its CLI
-build/split/merge paths are disabled for the in-house service.
+This is the operating custodian/Bloomberg master used by ``nport masters`` and
+``nport split``.
 
 Instead of editing ~90 per-fund ``data/funds/<fund>/security_master.csv`` files,
 the operator maintains a single Excel workbook

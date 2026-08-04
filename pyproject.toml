@@ -14,6 +14,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "reportlab>=4.0",
 ]
 # bloomberg: requires blpapi>=3.0 (not on PyPI — install via Bloomberg's index:
 #   pip install --index-url=https://blpapi.bloomberg.com/release blpapi)

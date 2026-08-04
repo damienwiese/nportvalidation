@@ -1,7 +1,7 @@
 """Per-period filing-data master workbook → per-fund filing_data.txt.
 
-COMPARISON-ONLY LEGACY ADAPTER. Its custody/EagleSTAR-derived writer and splitter
-are disabled and cannot supply the in-house filing.
+Operating custody/EagleSTAR writer and splitter used by ``nport masters`` and
+``nport split``.
 
 One row per fund. The Bloomberg-derivable fields (`rtn1-3`, the 3 reporting-period
 monthly total returns) are live ``=BDP(...)`` formulas; net/total assets come from the

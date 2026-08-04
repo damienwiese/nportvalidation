@@ -1,8 +1,8 @@
-"""Legacy human-review workbook schema.
+"""Centralized human-review workbook schema.
 
-The current workbook is generated from U.S. Bank-derived masters and is not a
-production-safe input. Its CLI merge path is disabled until independent adapters,
-reviewer/timestamp/evidence columns, and immutable merge receipts are implemented.
+The workbook is generated after custodian, EagleSTAR, create/redeem, and Bloomberg
+automation. It contains the residual values a person must complete before splitting
+the data to each fund.
 
 ``data/humanreview/<period>_review.xlsx``, one sheet per category. The pipeline surfaces
 two things here for a person to handle:

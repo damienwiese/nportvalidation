@@ -1,8 +1,6 @@
-# Legacy order-data quarantine
+# Create/redeem order input
 
-This directory belongs to the historical U.S. Bank-derived master workflow and is
-not an approved production input.
-
-The in-house service requires an authenticated internal create/redeem feed under
-`data/internal/orders/`, reconciled to the transfer agent and GL, and recorded in
-the approved source manifest.
+Place the create/redeem order CSV used for the filing month in this directory.
+`nport masters <period>` detects a CSV containing the columns `Ticker`, `Side`,
+`Trade Date`, and `Notional`. Use `--ap-orders <path>` when more than one file is
+present and you need to select one explicitly.

@@ -1,15 +1,8 @@
 # nport
 
-Build SEC Form N-PORT XML from independently sourced, traceable data.
-
-## Non-negotiable source boundary
-
-U.S. Bank custody exports, EagleSTAR attachments, prepared filings, email
-attachments, master workbooks, and files derived from them are comparison-only.
-They cannot populate the in-house filing.
-
-Bloomberg is permitted only through the Bloomberg formulas generated in the
-fund-period input workbook. The legacy master-workbook path remains disabled.
+Build SEC Form N-PORT XML from the operating inputs already received: custodian
+positions, EagleSTAR fund accounting, create/redeem orders, Bloomberg enrichment,
+and one centralized human-review workbook.
 
 ## One-time setup
 
@@ -19,72 +12,91 @@ py -3.11 -m venv .venv
 & ".\.venv\Scripts\python.exe" -m pip install -e ".[dev]"
 ```
 
-## Complete filing workflow
+## Complete monthly workflow
 
-Replace `<fund>` and `<period>` with the real ticker and filing month. The
-examples use `fdrs` and `2026-06` only to show the command format.
+The example period is `2026-06`. There is no manually created `positions.csv`.
 
-### 1. Place independent inputs
+### 1. Put the received files in these three folders
 
 ```text
-data/intake/<period>/<fund>/positions.csv
-data/intake/<period>/<fund>/create_redeem_orders.csv   # optional
+data/custodian/          # custodian positions CSV
+data/fund_accounting/    # EagleSTAR .zip or .mbox
+data/orders/             # create/redeem orders CSV
 ```
 
-### 2. Run the preparation automation
+### 2. Load all three inputs
 
 ```powershell
-& ".\.venv\Scripts\nport.exe" prepare fdrs 2026-06 `
-  --positions ".\data\intake\2026-06\fdrs\positions.csv" `
-  --orders ".\data\intake\2026-06\fdrs\create_redeem_orders.csv"
+& ".\.venv\Scripts\nport.exe" masters 2026-06
 ```
 
-Omit `--orders` when there is no independent order export. The command creates:
+The command auto-detects the files by their contents and prints the exact paths
+it selected. It creates:
 
 ```text
-data/funds/fdrs/filings/2026-06/filing_inputs.xlsx
+data/master/security_master.xlsx
+data/master/filing_master.xlsx
 ```
 
-### 3. Open, populate, and complete the workbook
-
-1. Open `filing_inputs.xlsx` on a Bloomberg terminal.
-2. Wait for the `Bloomberg` sheet formulas to resolve, then save the workbook.
-3. Ignore `Sources` for XML completion. Its labels, paths, dates, hashes, counts,
-   and `sourceId` values are optional diagnostics and never serialize into XML.
-4. On `FundFields` and `HoldingFields`, filter `status` to `MISSING`.
-5. For a known value, enter or confirm the value and set `status` to `PROVIDED`.
-6. For a genuinely inapplicable conditional field, set `NOT_APPLICABLE` and
-   enter the factual reason in `comment`.
-7. On `ReconciliationInputs`, complete every generated row with `controlValue`,
-   policy-approved `tolerance`, `status`, and comment. The program calculates the
-   filed-side actual and difference. `sourceId` is optional.
-
-For `fund_config.txt` rows, always enter `proposedValue` when the field applies.
-Any displayed `currentValue` is reference-only and cannot be released by changing
-the status alone. SEC Part F signer fields and `dateSigned` remain because they
-are XML filing values.
-
-### 4. Run the final automation
+If more than one candidate exists, specify the exact files explicitly:
 
 ```powershell
-& ".\.venv\Scripts\nport.exe" build fdrs 2026-06 --from-inputs
+& ".\.venv\Scripts\nport.exe" masters 2026-06 `
+  --custodian ".\data\custodian\custodian.csv" `
+  --fund-accounting ".\data\fund_accounting\eaglestar.zip" `
+  --ap-orders ".\data\orders\create_redeem.csv"
 ```
 
-This one command checks XML values, policy/applicability, and reconciliation;
-rejects explicit prohibited comparison-input references; creates a clean
-versioned bundle; builds the XML; and validates it against the SEC schema. If the filing is not ready, it classifies each item
-as an open input, input correction, prohibited input, or validation error and
-prints the exact workbook row or upstream file to fix. Correct it and run the
-same build command again.
+### 3. Let Bloomberg populate
 
-Successful outputs:
+Open both master workbooks on a Bloomberg terminal, wait for formulas to finish,
+then save and close both files.
+
+### 4. Complete the one human-review workbook
+
+```powershell
+& ".\.venv\Scripts\nport.exe" mergehumanreview 2026-06
+```
+
+Open `data/humanreview/2026-06_review.xlsx`. Fill every required blank reported
+by the command. Save and close it, then apply the entries:
+
+```powershell
+& ".\.venv\Scripts\nport.exe" mergehumanreview 2026-06
+```
+
+If the command still reports required blanks, fix those exact rows and rerun it.
+
+### 5. Write the reviewed data to each fund
+
+```powershell
+& ".\.venv\Scripts\nport.exe" split 2026-06
+```
+
+### 6. Build XML
+
+```powershell
+& ".\.venv\Scripts\nport.exe" build
+```
+
+To build only one fund:
+
+```powershell
+& ".\.venv\Scripts\nport.exe" build fdrs 2026-06
+```
+
+The final operating sequence is therefore:
 
 ```text
-data/builds/<fund>/<period>/<run-id>/
-output/<FUND>_<PERIOD>.xml
+masters -> open/save both workbooks in Bloomberg -> mergehumanreview
+-> human fills one review workbook -> mergehumanreview -> split -> build
 ```
 
-### 5. Optional read-only comparison
+Custodian, EagleSTAR, and create/redeem data enter only through `masters`.
+Human corrections enter only through `data/humanreview/<period>_review.xlsx`.
+Do not manually create a `positions.csv` for this workflow.
+
+### Optional read-only comparison
 
 Run this only after the independent XML exists and only when the reference uses
 the same fund and report date:
@@ -95,15 +107,6 @@ the same fund and report date:
   --reference "<aligned-reference.xml>"
 ```
 
-Never copy a comparison value back into `filing_inputs.xlsx`.
+Reference filings are comparison outputs; they are not operating inputs.
 
-## Compatibility
-
-During version `0.1.x`, `human_review.xlsx`, `prepare-review`, `review-status`,
-`finalize-review`, and `--from-review` remain readable compatibility aliases and
-print deprecation warnings. New work must use `filing_inputs.xlsx`, `prepare`,
-and `build --from-inputs`.
-
-See `docs/NPORT_Runbook.pdf` for field-level locations and
-`docs/US_Bank_NPORT_Comprehensive_Final_Audit_2026-08-03.pdf` for the remaining
-data gaps and exact fix locations.
+Run `nport guide` at any time to print the same sequence in the terminal.
