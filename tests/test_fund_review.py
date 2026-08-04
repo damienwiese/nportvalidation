@@ -44,7 +44,7 @@ def test_prepare_inputs_creates_simple_workbook_and_bloomberg_formulas(tmp_path,
     ]
     assert [cell.value for cell in wb["GapGuide"][1]] == [
         "gapId", "category", "gap", "inputSheet", "rowToFind",
-        "columnsToComplete", "sourceRow", "completionRule", "requiredFiles",
+        "columnsToComplete", "sourceRow", "completionRule", "evidenceToRegister",
     ]
     assert [cell.value for cell in wb["ReconciliationInputs"][1]] == [
         "checkId", "category", "actualBasis", "controlValue", "tolerance",

@@ -473,43 +473,24 @@ GAPS = [
      "Operations + Compliance", "Documented independent origin; no claim that local code can prove origin"],
 ]
 
-GAP_FILES = {
-    "G-001": ["data/intake/<period>/<fund>/positions.csv", "clean bundle: holdings.csv"],
-    "G-002": ["accounting_close.csv or accounting_close.pdf", "clean bundle: filing_data.txt"],
-    "G-003": ["create_redeem_orders.csv", "reinvestment_support.csv (if applicable)"],
-    "G-004": ["fund_policy_record.pdf", "fund_static_data.csv", "clean bundle: fund_config.txt"],
-    "G-005": ["filing_inputs.xlsx", "clean bundle: source_manifest.csv"],
-    "G-006": ["comparison only: data/custodian/*", "data/fund_accounting/*", "data/master/*.xlsx", "legacy data/funds/* files"],
-    "G-007": ["filing_inputs.xlsx", "field_provenance.csv", "input_receipt.json"],
-    "G-008": ["swap_trade_export.csv", "executed_swap_confirmations.pdf"],
-    "G-009": ["cash_ledger.csv", "risk_metrics.csv", "rule_18f4_results.csv", "var_backtesting.csv", "monthly_return_categories.csv"],
-    "G-010": ["liquidity_classifications.csv", "liquidity_circumstances.csv (if applicable)"],
-    "G-011": ["option_trade_terms.csv", "option_delta.csv"],
-    "G-012": ["independent reconciliation evidence", "filing_inputs.xlsx: ReconciliationInputs", "clean bundle: reconciliation.csv"],
-    "G-013": ["actual independent source files", "input_receipt.json"],
-}
-
-
-def gap_files(gap_id: str) -> str:
-    return "<br>".join(code(value) for value in GAP_FILES[gap_id])
-
-
 def issue_tables() -> tuple[str, str]:
-    files_table = chunked_t(
-        ["ID / status", "Gap / affected fields", "Required file templates"],
-        [[f"<b>{r[0]}</b><br>{r[1]}", f"<b>{r[2]}</b><br>{r[3]}", gap_files(r[0])] for r in GAPS],
-        ["18%", "34%", "48%"], "dense", 4,
+    centralized_table = chunked_t(
+        ["ID / status", "What must be resolved", "Single review destination"],
+        [[f"<b>{r[0]}</b><br>{r[1]}", f"<b>{r[2]}</b><br>{r[3]}",
+          (code("filing_inputs.xlsx") + "<br>" + r[4]) if r[0] != "G-013" else r[4]]
+         for r in GAPS],
+        ["18%", "42%", "40%"], "dense", 4,
     )
     action_table = chunked_t(
         ["ID", "Sheet / entry point", "Exact action", "Owner", "Completion test"],
         [[f"<b>{r[0]}</b>", r[4], r[5], f"<b>{r[6]}</b>", r[7]] for r in GAPS],
         ["8%", "17%", "37%", "16%", "22%"], "dense", 3,
     )
-    return files_table, action_table
+    return centralized_table, action_table
 
 
 def audit_html() -> str:
-    gap_file_table, gap_action_table = issue_tables()
+    review_location_table, gap_action_table = issue_tables()
     input_rows = [
         ["Summary", "Fund + period", "Nothing", "Scope, stop rule, and next command", "Read-only"],
         ["Bloomberg", "targetFile + recordKey + fieldName", "Nothing; formulas calculate on terminal", "Returns and supported security/reference fields", "Unresolved formulas remain MISSING"],
@@ -546,8 +527,8 @@ def audit_html() -> str:
 
 <h2>4. Complete tracked-item register</h2>
 <p>G-001 through G-012 now have implemented entry, correction, calculation, or validation paths. G-013 is retained only as a disclosed limitation and is outside the active remediation plan, per the operating decision.</p>
-<p class="small"><b>File-name rule:</b> the names below are expected internal naming templates, not claims that the files currently exist. Use the real source filename when different. An empty placeholder never resolves an input.</p>
-{gap_file_table}
+<div class="callout good"><b>One review workspace:</b> every correctable item is resolved in <code>filing_inputs.xlsx</code>. Upstream evidence keeps its real filename and is registered once on <code>Sources</code>; it is not another review template.</div>
+{review_location_table}
 <h3>Exact fix location and proof</h3>
 {gap_action_table}
 
@@ -579,7 +560,7 @@ def audit_html() -> str:
 
 def runbook_html() -> str:
     config_rows, filing_rows, holding_rows, trace_checks = trace_rows()
-    gap_file_table, gap_action_table = issue_tables()
+    review_location_table, gap_action_table = issue_tables()
     source_rows = [
         ["Positions", code("internal_positions"), "Part C base rows and values", "Required", "Actual source system is recorded by Operations in Sources"],
         ["Fund accounting", code("internal_fund_accounting"), "B.1/B.2, gains, returns, cash", "Required when fields apply", "Actual GL/NAV source is recorded by Fund Accounting"],
@@ -704,8 +685,8 @@ foreach ($book in Get-ChildItem -Path ".\data\funds\*\filings\$period\filing_inp
 <p><code>sourceAsOf</code> is recorded once on the Sources row and must equal the filing period end. No separate sign-off metadata is required.</p>
 
 <h2>7. Current input checklist and exact fix location</h2>
-<p class="small"><b>File-name rule:</b> these are expected templates. Use the actual independent source filename; never create an empty placeholder.</p>
-{gap_file_table}
+<div class="callout good"><b>Centralized remediation:</b> use only this fund-period's <code>filing_inputs.xlsx</code>. Do not create gap-specific workbooks or empty evidence templates. Register the real supporting file or system once on <code>Sources</code>, then enter the supported value in the named workbook row.</div>
+{review_location_table}
 <h3>Exact fix location and proof</h3>
 {gap_action_table}
 

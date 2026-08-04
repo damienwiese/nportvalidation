@@ -13,24 +13,16 @@ Recommended layout:
 
 `data/intake/<period>/<fund>/<source-file>`
 
-Recommended file templates (use the actual source filename if different):
+There are only two command-line intake roles:
 
-- `positions.csv`
-- `accounting_close.csv` or `accounting_close.pdf`
-- `create_redeem_orders.csv` and, when applicable, `reinvestment_support.csv`
-- `fund_policy_record.pdf` and `fund_static_data.csv`
-- `swap_trade_export.csv` and `executed_swap_confirmations.pdf`
-- `cash_ledger.csv`, `risk_metrics.csv`, `rule_18f4_results.csv`,
-  `var_backtesting.csv`, and `monthly_return_categories.csv`
-- `liquidity_classifications.csv` and, when applicable,
-  `liquidity_circumstances.csv`
-- `option_trade_terms.csv` and `option_delta.csv`
-- independent GL, flow, and derivatives control reports used to support the
-  values entered on `ReconciliationInputs`
+- the independent position export passed with `--positions` (required); and
+- the independent create/redeem order export passed with `--orders` (optional).
 
-These are naming conventions, not claims that the files exist. Do not create an
-empty placeholder to clear an input; each file must contain genuine independent
-evidence from the named internal owner.
+Those files may keep their real source-system names. All other remediation is
+centralized in the generated `filing_inputs.xlsx`. Do not create gap-specific
+workbooks or empty evidence templates. Register each real supporting file or
+system once on `Sources`, then enter its supported value or disposition in the
+named `FundFields`, `HoldingFields`, or `ReconciliationInputs` row.
 
 Run `nport prepare <fund> <period> --positions <file> [--orders <file>]` once to
 create `filing_inputs.xlsx`. Add each additional real source directly to that
