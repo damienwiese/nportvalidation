@@ -806,3 +806,23 @@ def test_golden_merge_then_split_propagates_review_to_per_fund(tmp_path):
     assert swap["counterpartyName"] == "Cantor Fitzgerald & Co."
     assert swap["recDesc"].startswith("Total return of") and swap["pmntFloatingRtIndex"] == "USD-SOFR"
     assert opt["refIndexName"] == "S&P 500 Index" and opt["refIndexIdentifier"] == "SPX"
+def test_review_overlays_option_delta_and_liquidity(tmp_path):
+    from nport import humanreview
+    from nport.master_sheet import apply_review_to_rows
+
+    workbook = tmp_path / "review.xlsx"
+    humanreview.build_review_workbook(workbook, {
+        "option_delta": [{"fund": "FDRS", "ticker": "SPY-OPT", "delta": "0.51",
+                          "sourceNote": ""}],
+        "holding_liquidity": [{
+            "fund": "FDRS", "ticker": "SPY-OPT", "cusip": "", "name": "SPY option",
+            "liquidityClassificationJson": '[{"category":"Highly Liquid","percentage":"100"}]',
+            "liquidityCircumstancesJson": "", "sourceNote": "",
+        }],
+    })
+    rows = [{"Account": "FDRS", "ticker": "SPY-OPT", "cusip": "", "derivCat": "OPT",
+             "title": "SPY US 06/30/26 C500", "delta": "",
+             "liquidityClassificationJson": ""}]
+    apply_review_to_rows(rows, humanreview.read_review(workbook))
+    assert rows[0]["delta"] == "0.51"
+    assert "Highly Liquid" in rows[0]["liquidityClassificationJson"]

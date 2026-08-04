@@ -442,6 +442,11 @@ _SECTIONS = [
       "mon2Sales", "mon2Redemption", "mon2Reinvestment",
       "mon3Sales", "mon3Redemption", "mon3Reinvestment"]),
     ("Designated Index", ["nameDesignatedIndex", "indexIdentifier"]),
+    ("Conditional filing sections (human review when applicable)",
+     ["cashNotReportedInCOrD", "monthlyReturnCategoriesJson", "derivativesRegime",
+      "derivExposurePct", "derivCurrencyExposurePct", "derivInterestRateExposurePct",
+      "derivDaysInExcess", "medianDailyVarPct", "medianVarRatioPct",
+      "backtestingExceptions"]),
 ]
 
 
@@ -463,7 +468,7 @@ def _format_filing_data(rec: dict[str, str], period: str) -> str:
 
 
 def merge_review_into_filing_master(master_path: Path, review) -> int:
-    """Overlay the human-reviewed designated index onto the filing master, in place.
+    """Overlay human-reviewed index and conditional fund fields, in place.
 
     Reads the (Bloomberg-populated) filing master + its risk sheet, applies the reviewed
     designated broad-based index per fund, and writes both sheets back as LITERAL values
@@ -474,6 +479,7 @@ def merge_review_into_filing_master(master_path: Path, review) -> int:
     from nport.master_sheet import write_literal_workbook
 
     designated = review.designated_index()
+    fund_risk = review.fund_risk()
     filing_rows = read_filing_master(master_path)
     risk_rows = read_risk_sheet(master_path)
     na = 0
@@ -482,6 +488,16 @@ def merge_review_into_filing_master(master_path: Path, review) -> int:
         idx = designated.get(acct)
         if idx:
             rec["nameDesignatedIndex"], rec["indexIdentifier"] = idx
+        risk = fund_risk.get(acct)
+        if risk:
+            for column in (
+                "cashNotReportedInCOrD", "monthlyReturnCategoriesJson",
+                "derivExposurePct", "derivCurrencyExposurePct",
+                "derivInterestRateExposurePct", "derivDaysInExcess",
+                "medianDailyVarPct", "medianVarRatioPct", "backtestingExceptions",
+            ):
+                if (risk.get(column) or "").strip():
+                    rec[column] = risk[column]
         if (rec.get("nameDesignatedIndex") or "N/A") == "N/A":
             na += 1
     sheets = [("filing", HEADER, filing_rows)]

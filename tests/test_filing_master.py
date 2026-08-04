@@ -238,3 +238,13 @@ def test_split_off_terminal_omits_b3(tmp_path):
     split_filing_master(p, funds, "2026-06")
     fd = parse_filing(funds / "chyg" / "filings" / "2026-06" / "filing_data.txt")
     assert fd.cur_metrics_json == ""
+def test_format_filing_data_includes_conditional_review_fields():
+    from nport.filing_master import _format_filing_data
+
+    text = _format_filing_data({
+        "Account": "FDRS", "cashNotReportedInCOrD": "125.00",
+        "medianDailyVarPct": "4.2", "backtestingExceptions": "0",
+    }, "2026-06")
+    assert "cashNotReportedInCOrD=125.00" in text
+    assert "medianDailyVarPct=4.2" in text
+    assert "backtestingExceptions=0" in text

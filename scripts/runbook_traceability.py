@@ -60,9 +60,9 @@ def current_lineage_section() -> str:
          "Active enrichment writer for security IDs, country, debt terms, returns, and B.3 inputs"],
         ["Human-review workbook", str(review_path.relative_to(ROOT)).replace("\\", "/"),
          "; ".join(f"{name} {count}" for name, count in review_counts.items()),
-         "Current rows are seeds/prefills or preserved edits; the workbook has sourceNote but no required reviewer identity, review time, or evidence-reference columns"],
+         "Central entry point for every human-supplied XML value; reconciliation and pipeline status are read-only"],
         ["Fund configuration and tool logic", "data/funds/*/fund_config.txt plus source code", "Static filing identity, constants, and derived values",
-         "Active writer for the fields identified below"],
+         "Static identity stays in config; reviewed policy values are applied from fund_policy"],
         ["U.S. Bank prepared N-PORT files", "Downloaded comparison packages", "No writer path into masters, per-fund inputs, or XML",
          "Comparison only - distinct from the U.S. Bank custody holdings CSV"],
     ]
@@ -137,6 +137,13 @@ def holding_rows(dirs: list[Path]) -> list[dict[str, str]]:
 
 
 def config_source(name: str) -> tuple[str, str, str]:
+    if name in {"fiscal_year_end_mmdd", "derivatives_regime_policy", "liquidity_required",
+                "cash_b2f_required", "policy_effective_from", "policy_effective_to"}:
+        return (
+            "Human-review workbook fund_policy sheet",
+            "humanreview.py writes populated review cells to the matching fund_config.txt; policy.py derives filing dates/applicability",
+            "Reviewer enters the approved internal fund-policy fact; blank required cells block release",
+        )
     if name == "ccc":
         return (
             "fund_config.txt (current); EDGAR filer administrator",
@@ -184,16 +191,14 @@ def filing_source(name: str) -> tuple[str, str, str]:
     }
     designated = {"name_designated_index", "index_identifier"}
     if name in policy:
-        if name == "derivatives_regime":
-            return ("No current populated source; future approved fund registry", "policy.py derives it only when the registry exists", "Compliance/Risk must approve the registry row; current production registry is absent")
-        return ("Tool-derived filing period/default; future approved fund registry", "filing_master.py derives the period; policy.py overrides from an approved registry when present", "Operations verifies period; Compliance approves the registry row before LIVE")
+        return ("Human-review workbook fund_policy sheet", "humanreview.py applies policy to fund_config.txt; policy.py derives the filing context", "Reviewer supplies approved policy; the tool does not infer a missing value")
     if name in operator:
         return ("Filing Operations and authorized signer workflow", "Operator-controlled status/date with release gate", "Authorized reviewer confirms final status, signature date, and TEST-to-LIVE promotion")
     if name in totals:
         return ("Gmail export - U.S. Bank EagleSTAR Trial Balance; custodian fallback", "eaglestar.py overrides filing_master.py custody-derived fallback", "Fund Accounting verifies attachment cutoff, entity mapping, totals, and reconciliation")
     if name in accounting:
         if name in {"cash_not_reported_in_c_or_d", "monthly_return_categories_json"}:
-            return ("No current feed", "Typed field exists; no Gmail, custodian, create/redeem, or Bloomberg writer", "Fund Accounting must provide and approve a supported calculation when applicable")
+            return ("Human-review workbook fund_risk sheet when applicable", "filing_master.py overlays the populated review value into filing_data.txt", "Fund Accounting enters the supported calculation; blank required cells block release")
         return ("Gmail export - U.S. Bank EagleSTAR Trial Balance, or tool constant where identified", "eaglestar.py writes mapped accounting values; filing_master.py supplies explicit defaults", "Fund Accounting verifies which values came from the attachment versus a coded assumption")
     if name in flows:
         if name.endswith("reinvestment"):
@@ -204,7 +209,7 @@ def filing_source(name: str) -> tuple[str, str, str]:
     if name in risk:
         if name in {"cur_metrics_json", "credit_sprd_risk_ig_json", "credit_sprd_risk_nonig_json"}:
             return ("Bloomberg formulas plus U.S. Bank custodian market value", "filing_master.py aggregates duration/rating fields after workbook calculation", "Risk reviewer verifies Bloomberg calculation and aggregation")
-        return ("No current feed", "B.9/B.10 typed fields and preflight gates exist, but no writer populates them", "Derivatives Risk supplies and approves the applicable calculation")
+        return ("Human-review workbook fund_risk sheet when applicable", "filing_master.py overlays B.9/B.10 review values and preflight enforces policy-driven requirements", "Derivatives Risk supplies the applicable calculation")
     if name in designated:
         return ("Human-review workbook designated_index sheet (legacy 497K seed)", "humanreview.py seed values merge through filing_master.py", "Reviewer verifies the seed against the current filing; current workbook does not record reviewer identity")
     return ("Approved internal control record", "Direct filing-master mapping", "Assigned data owner verifies value and evidence")
@@ -212,7 +217,7 @@ def filing_source(name: str) -> tuple[str, str, str]:
 
 def holding_source(group: str, name: str) -> tuple[str, str, str]:
     if group == "liquidity":
-        return ("No current feed", "Policy-conditional typed C.7 field exists; no current writer populates it", "Liquidity Risk must supply and approve the data if the registry marks C.7 applicable")
+        return ("Human-review workbook holding_liquidity sheet when applicable", "master_sheet.py overlays the matching holding row; policy controls whether classification is required", "Liquidity Risk enters the supported C.7 JSON when fund_policy requires it")
     if group == "base":
         if name in {"name", "title"}:
             return ("U.S. Bank custodian CSV SecurityName", "custodian.py copies/truncates the received security name", "Operations verifies truncation and name exceptions")
@@ -257,7 +262,7 @@ def holding_source(group: str, name: str) -> tuple[str, str, str]:
         return ("No current automated or human-review writer", "The field is accepted by config.py but is blank/inapplicable for the current Other-receive/Floating-pay TRS shape", "If the contract shape changes, engineering must add a supported input route before release")
     if group in {"option", "ref_instrument", "other_deriv", "forward"}:
         if name == "delta":
-            return ("Manual value preserved in security_master.xlsx", "No automated feed; master_sheet.py preserves the workbook value", "Risk reviewer identifies the source system, as-of date, and approval")
+            return ("Human-review workbook option_delta sheet", "master_sheet.py overlays the matching fund/ticker value; N/A remains schema-valid", "Risk reviewer enters a report-date delta when one is available and applicable")
         if name in {"put_or_call", "written_or_pur", "exercise_price", "exp_dt"}:
             return ("U.S. Bank custodian CSV", "custodian.py parses option/derivative terms from the custody position", "Derivatives Operations verifies parsed contract terms")
         if name in {"share_no", "exercise_price_cur_cd"}:

@@ -1344,7 +1344,7 @@ def _mergehumanreview(args) -> None:
     re-run `nport masters` if you ever need live =BDP formulas again.
     """
     from nport import humanreview
-    from nport.filing_master import merge_review_into_filing_master
+    from nport.filing_master import merge_review_into_filing_master, read_filing_master
     from nport.master_sheet import merge_review_into_master, read_master_xlsx
 
     _, pos_period = _split_positionals(getattr(args, "pos", None))
@@ -1359,6 +1359,17 @@ def _mergehumanreview(args) -> None:
     #    residual gaps, preserves anything already filled, seeds the reviewed reference tables.
     master_rows, _ = read_master_xlsx(_SECURITY_MASTER_PATH)
     generated = humanreview.generate_from_master_rows(master_rows)
+    accounts = sorted({(row.get("Account") or "").strip().upper()
+                       for row in master_rows if (row.get("Account") or "").strip()})
+    filing_rows = read_filing_master(_FILING_MASTER_PATH) if _FILING_MASTER_PATH.is_file() else []
+    generated.update(humanreview.generate_fund_rows(accounts, filing_rows, _DEFAULT_FUNDS_DIR))
+    reconciliation_rows = humanreview.generate_reconciliation_rows(
+        _MASTER_DIR / f"reconciliation_{period}.csv"
+    )
+    generated["reconciliation"] = reconciliation_rows
+    generated["pipeline_status"] = humanreview.generate_pipeline_status(
+        period, accounts, reconciliation_rows, _FILING_MASTER_PATH.is_file()
+    )
     try:
         gaps = humanreview.build_review_workbook(review_path, generated)
     except PermissionError:
@@ -1368,6 +1379,7 @@ def _mergehumanreview(args) -> None:
 
     # 2. Merge the reviewed values into the masters (frozen to literals).
     try:
+        config_updates = humanreview.apply_fund_policy_to_configs(_DEFAULT_FUNDS_DIR, review)
         sm_gaps = merge_review_into_master(_SECURITY_MASTER_PATH, review)
         na_idx = merge_review_into_filing_master(_FILING_MASTER_PATH, review) \
             if _FILING_MASTER_PATH.is_file() else 0
@@ -1378,6 +1390,7 @@ def _mergehumanreview(args) -> None:
     # Report EVERY sheet with an unfilled required cell. Reporting only invCountry hid 58
     # blank swap-leg spreads behind "0 unfilled" — the build then failed on all 52 swap funds.
     print(f"  Merged human review ({review_path.name}) into the masters.")
+    print(f"    fund policy configs updated: {config_updates}")
     outstanding = {sheet: n for sheet, n in sorted(gaps.items()) if n}
     if outstanding:
         print("    rows still missing a REQUIRED value:")
@@ -1385,9 +1398,12 @@ def _mergehumanreview(args) -> None:
             print(f"      {sheet:22} {n}")
     if sm_gaps:
         print(f"    swap/option reference still unresolved: {sm_gaps}")
+    if reconciliation_rows:
+        print(f"    reconciliation REVIEW rows (read-only): {len(reconciliation_rows)}")
+        print("      resolve the named source inputs and rerun `nport masters`; do not overwrite them in review")
     print(f"    funds with N/A designated index: {na_idx} (allowed — prospectus fill)")
-    if outstanding or sm_gaps:
-        print(f"\n    -> fill the blanks in {review_path}, then run "
+    if outstanding or sm_gaps or reconciliation_rows:
+        print(f"\n    -> fill the highlighted required cells in {review_path}, then run "
               f"`nport mergehumanreview` again. The build WILL fail until they are filled.")
         print("  Next: fill the workbook (not `nport split` yet).")
     else:

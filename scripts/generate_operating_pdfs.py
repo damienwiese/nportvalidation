@@ -212,11 +212,11 @@ def trace_appendix() -> list:
     for group, field, owner, mechanism, filename, anchor in provenance.ROWS:
         grouped.setdefault(group, []).append((field, owner, mechanism, provenance.ref(filename, anchor)))
     for group, rows in grouped.items():
-        for start in range(0, len(rows), 5):
+        for start in range(0, len(rows), 4):
             label = group if start == 0 else f"{group} - continued"
             story += [KeepTogether([p(label, H2), table(
                 ["XML field(s)", "Current writer", "How populated", "Code anchor"],
-                [list(row) for row in rows[start:start + 5]],
+                [list(row) for row in rows[start:start + 4]],
                 [1.25, 1.55, 2.9, 1.6],
             )])]
     return story
@@ -499,8 +499,8 @@ def runbook() -> list:
          "Human: read the command's required-gap counts, then open data\\humanreview\\2026-06_review.xlsx. Fill supported value cells only. Save and close the workbook."),
         ("5. Apply the human entries", '& ".\\.venv\\Scripts\\nport.exe" mergehumanreview 2026-06',
          "Human: confirm the command reports no required blanks and no unresolved swap/option reference. If it reports gaps, reopen the exact named sheet, correct those rows, save, close, and run this command again."),
-        ("6. Review reconciliation and policy", "Open data\\master\\reconciliation_2026-06.csv\nReview data\\funds\\<fund>\\fund_config.txt",
-         "Human: resolve filing-relevant REVIEW rows from aligned source evidence. Confirm the five approved policy fields for every filing fund. These issues are not cleared by typing an override into the monthly review workbook."),
+        ("6. Clear the remaining status gates", "Open data\\humanreview\\2026-06_review.xlsx\nReview reconciliation and pipeline_status",
+         "Human: all issues are visible here. Enter policy/XML facts only in the editable sheets. For a read-only reconciliation or pipeline row, correct the named custodian, EagleSTAR, or create/redeem input, rerun masters, refresh Bloomberg, and rerun mergehumanreview."),
         ("7. Preview and write per-fund files", '& ".\\.venv\\Scripts\\nport.exe" split 2026-06 --dry-run\n& ".\\.venv\\Scripts\\nport.exe" split 2026-06',
          "Human: verify the previewed fund population, then run the write command. It projects the reviewed masters to data\\funds\\<fund>\\. Do not manually patch generated filing_data.txt, holdings.csv, derivatives.csv, or security_master.csv."),
         ("8. Preflight and build XML", '& ".\\.venv\\Scripts\\nport.exe" build --dry-run\n& ".\\.venv\\Scripts\\nport.exe" build',
@@ -510,33 +510,39 @@ def runbook() -> list:
         number, title = heading.split(". ", 1)
         s += [Spacer(1, 5), KeepTogether([step_card(number, title, command, meaning)])]
     s += [PageBreak(), p("Human-review workbook: exact edit instructions", H1),
-          p("The workbook is generated after custodian, EagleSTAR, create/redeem, and Bloomberg processing. Row-key columns identify the record and must not be edited. Enter or correct only the value columns listed below. A value must come from the stated evidence; if evidence is unavailable, leave it blank and stop the affected filing.", CALLOUT),
+          p("The workbook is generated after custodian, EagleSTAR, create/redeem, and Bloomberg processing. It is the single human-review location. Navy/grey columns are identifiers or status; teal-header columns are human-editable. Red cells are required and blank; green cells are required and populated; blue cells are optional. Never edit row keys.", CALLOUT),
           table(["Sheet", "Do not edit - row keys", "Human-editable value columns", "Required rule"], [
+              ["fund_policy", "fund", "fiscalYearEndMMDD; derivativesRegimePolicy; liquidityRequired; cashB2fRequired; policyEffectiveFrom; policyEffectiveTo", "First five are required for every fund. policyEffectiveTo may be blank for an open-ended policy. These values are applied to fund_config.txt on the next merge."],
+              ["fund_risk", "fund", "cashNotReportedInCOrD; monthlyReturnCategoriesJson; derivExposurePct; derivCurrencyExposurePct; derivInterestRateExposurePct; derivDaysInExcess; medianDailyVarPct; medianVarRatioPct; backtestingExceptions", "Required cells are determined only by fund_policy: B.2.f, B.9, or B.10 is not requested when the approved policy says it is inapplicable."],
               ["designated_index", "ticker", "indexName; indexIdentifier", "Conditional. Confirm the prefilled value against the fund's approved prospectus/risk policy. N/A is allowed only when supported."],
               ["swap_counterparties", "code", "legalName; lei", "Both are required for each listed counterparty. Use the executed legal-entity/trade record."],
               ["option_index", "underlying", "indexName; indexIdentifier", "Both are required for each listed option underlying. Use the actual contract/reference instrument."],
               ["swap_legs", "fund; swapTicker", "recFixedOrFloating; recDesc; pmntFloatingRtIndex; pmntFloatingRtSpread; pmntRateTenor; pmntRateUnit", "All six are required for each swap row. Use the executed confirmation. Enter 0 only when the actual spread is zero."],
+              ["option_delta", "fund; ticker", "delta", "N/A is schema-valid. Replace it only with a supported report-date delta; no source/as-of metadata is required for XML generation."],
+              ["holding_liquidity", "fund; ticker; cusip; name", "liquidityClassificationJson; liquidityCircumstancesJson", "Classification is required only for funds whose fund_policy liquidityRequired is Y. Circumstances are populated only when applicable."],
               ["invCountry", "fund; ticker; cusip; name", "invCountry", "Required when the row exists. Enter a supported ISO two-letter country; do not infer from the issuer name."],
               ["isin", "fund; ticker; cusip; name", "isin", "Optional. A blank may remain when another permitted identifier path is valid."],
               ["sus_review", "fund; field", "value; reason; confirmed", "Current workflow does not make these columns a required release gate. Do not use this sheet to override another source."],
+              ["reconciliation", "all columns", "None - read-only", "A REVIEW row is a source disagreement. Correct the relevant landed input and rerun masters; the workbook cannot overwrite the filed-side value."],
+              ["pipeline_status", "all columns", "None - read-only", "The resolution column names the command/input action. A BLOCKED row remains blocked until regeneration reports READY."],
           ], [1.1, 1.35, 2.65, 2.2]),
           p("What mergehumanreview does", H2),
           table(["Run", "System action", "Human pass condition"], [
-              ["First run", "Refreshes the review workbook from Bloomberg-populated master rows, preserves previously filled values on matching keys, and merges any populated review values into both masters.", "Use the printed per-sheet counts to locate remaining required blanks."],
-              ["Second and later runs", "Refreshes again, preserves saved entries, freezes populated Bloomberg cells to literals in the masters, and merges the completed review values.", "No required blanks and no unresolved swap/option reference are reported."],
+              ["First run", "Refreshes every review sheet from the Bloomberg-populated masters and reconciliation report, preserving prior values on matching row keys.", "Use the printed per-sheet counts and red cells to locate required blanks."],
+              ["Second and later runs", "Applies policy to each fund_config.txt, fund-risk values to filing_master.xlsx, and holding values to security_master.xlsx; read-only status is regenerated.", "No required blanks, unresolved swap/option reference, or read-only BLOCKED status remains."],
           ], [1.25, 3.8, 2.25]),
           p("Reconciliation flags are different", H1),
-          p("A missing review value has a cell in the review workbook. A reconciliation flag means two received sources do not agree or are not aligned. Do not type over the difference in the review workbook. Correct or replace the source file in its input folder, rerun <b>masters</b>, and review the regenerated reconciliation report.", WARN),
-          KeepTogether([p("Fund policy is also outside the monthly review workbook", H1),
-          p("The current code reads approved fund-level policy from data/funds/&lt;fund&gt;/fund_config.txt. For each filing fund, the human must supply fiscalYearEndMMDD, derivativesRegimePolicy, liquidityRequired, cashB2fRequired, and policyEffectiveFrom from approved fund documentation. The pipeline must not infer these values. policyEffectiveTo may remain blank for an open-ended policy.", WARN)]),
+          p("A missing value is editable because the XML needs a human-supplied fact. A blocking status may be read-only because the pipeline detected a source disagreement or failed gate. Both appear in the same workbook. Do not convert a source mismatch into a manual filing override: correct the named input and regenerate.", WARN),
+          KeepTogether([p("Fund policy is now centralized", H1),
+          p("Enter the five required policy facts in fund_policy. On the next mergehumanreview run, the system writes populated values into the matching fund_config.txt and derives submissionType, repPdEnd, repPdDate, derivativesRegime, and conditional requirements. It never infers an absent policy value.", CALLOUT)]),
           p("Release checklist", H1),
           table(["Gate", "Human verification", "Evidence/output", "Stop when"], [
               ["Input selection", "Selected files, population, and cutoff are correct.", "masters --dry-run output", "Any selected path or date is wrong."],
               ["Date alignment", "Custody, accounting, orders, and report date support an apples-to-apples period conclusion.", "Received file metadata and printed selection", "Cutoffs are materially misaligned and no approved treatment exists."],
               ["Bloomberg", "Both masters finished calculation and were saved/closed.", "Literal values read on mergehumanreview", "Required formulas remain errors or blank."],
               ["Human review", "Every required review cell is supported and populated.", "mergehumanreview gap report", "Required gaps or unresolved swap/option references remain."],
-              ["Reconciliation", "Filing-relevant REVIEW rows are cleared or resolved from source evidence.", "data/master/reconciliation_2026-06.csv", "An unexplained filing-relevant difference remains."],
-              ["Policy/applicability", "All required policy facts are approved for each filing fund.", "fund_config.txt and preflight", "A required policy fact or applicability decision is absent."],
+              ["Reconciliation", "Read-only REVIEW rows are cleared after source correction.", "review workbook -> reconciliation", "An unexplained filing-relevant difference remains."],
+              ["Policy/applicability", "All required fund_policy cells are populated and applied.", "review workbook -> fund_policy", "A required policy fact or applicability decision is absent."],
               ["Fund population", "The split preview contains the intended funds and no fixture accounts.", "split --dry-run output", "A fund is missing, duplicated, or unexpected."],
               ["XML and schema", "Dry-run build and final build pass input and SEC XSD validation.", "build output and output/<FUND>_<PERIOD>.xml", "Any validation or XSD error remains."],
               ["Release status", "The output is deliberately TEST or LIVE under the approved release process.", "root attributes in generated XML", "The operator cannot prove the intended status."],
@@ -546,8 +552,10 @@ def runbook() -> list:
               ["Source freshness", "Custody 06/25; EagleSTAR 06/24; orders through 06/24; report date 06/30.", "Replace the files in the three intake folders with aligned period-end inputs, then rerun masters."],
               ["Human review", "58 required pmntFloatingRtSpread cells are blank.", "2026-06_review.xlsx -> swap_legs -> pmntFloatingRtSpread, using executed confirmations."],
               ["Reconciliation", "258 REVIEW rows across 137 source identifiers; 72 of 304 quarter fund-side series still differ after aggregation.", "Correct or replace the applicable custody, EagleSTAR, or order source; rerun masters."],
-              ["Fund policy", "0 of 105 production fund configurations contain all five required policy fields.", "data/funds/<fund>/fund_config.txt, using approved fund facts."],
-              ["Option delta", "70 of 70 current option rows are blank/N/A.", "Supply report-date delta from the supported risk source for applicable option holdings; current review workbook has no option-delta column."],
+              ["Fund policy", "0 of 105 production fund configurations contain all five required policy fields.", "2026-06_review.xlsx -> fund_policy. Enter the five approved facts; rerun mergehumanreview."],
+              ["Option delta", "70 of 70 current option rows contain N/A.", "2026-06_review.xlsx -> option_delta. N/A is schema-valid; replace only when a supported report-date delta is available."],
+              ["Conditional B.2.f/B.9/B.10", "Applicability cannot be determined until fund_policy is complete.", "2026-06_review.xlsx -> fund_risk; required cells turn red after policy is populated and the merge is rerun."],
+              ["Conditional C.7", "1,996 holding rows have an entry location; applicability cannot be determined until fund_policy is complete.", "2026-06_review.xlsx -> holding_liquidity; classification becomes required only for liquidityRequired=Y funds."],
               ["Fund coverage", "104 XML files for 105 real custodian accounts; GPTZ is missing.", "Resolve the GPTZ fund input/configuration path before split/build."],
               ["SEC XSD", "0 of 104 existing TEST XML files pass; those files contain fundsDesignatedInfo without required medianDailyVarPct.", "The current builder now guards varInfo on medianDailyVarPct. Resolve policy/B.10 inputs where applicable, rebuild all XML, and revalidate; do not release the stale files."],
           ], [1.2, 2.75, 3.35])]),

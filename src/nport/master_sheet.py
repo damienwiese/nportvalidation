@@ -101,6 +101,7 @@ DEBT_COLUMNS = [
     "maturityDt", "couponKind", "annualizedRt",
     "isDefault", "areIntrstPmntsInArrs", "isPaidKind",
 ]
+LIQUIDITY_COLUMNS = ["liquidityClassificationJson", "liquidityCircumstancesJson"]
 
 
 def _build_enrichment_columns() -> list[str]:
@@ -111,7 +112,7 @@ def _build_enrichment_columns() -> list[str]:
     the entry builders emit) so it cannot drift from ``custodian.py``.
     """
     cols: list[str] = []
-    for seq in (EQUITY_HEADERS, OPTION_HEADERS, SWAP_HEADERS, DEBT_COLUMNS):
+    for seq in (EQUITY_HEADERS, OPTION_HEADERS, SWAP_HEADERS, DEBT_COLUMNS, LIQUIDITY_COLUMNS):
         for c in seq:
             if c not in cols:
                 cols.append(c)
@@ -734,6 +735,9 @@ def merge_review_into_master(master_path: Path, review) -> int:
     """
     rows, header = read_master_xlsx(master_path)
     apply_review_to_rows(rows, review)
+    for column in LIQUIDITY_COLUMNS:
+        if column not in header:
+            header.append(column)
     write_literal_workbook(master_path, [("master", header, rows)])
     gaps = 0
     for r in rows:
@@ -758,6 +762,8 @@ def apply_review_to_rows(rows: list[dict[str, str]], review) -> None:
     opt_idx = review.option_index()
     inv = review.inv_country()
     isins = review.isin()
+    deltas = review.option_delta()
+    liquidity = review.holding_liquidity()
     leg_cols = ("recFixedOrFloating", "recDesc", "pmntFloatingRtIndex",
                 "pmntFloatingRtSpread", "pmntRateTenor", "pmntRateUnit")
     for r in rows:
@@ -787,11 +793,19 @@ def apply_review_to_rows(rows: list[dict[str, str]], review) -> None:
             idx = opt_idx.get(underlying)
             if idx:
                 r["refIndexName"], r["refIndexIdentifier"] = idx
+            delta = deltas.get((acct, ticker))
+            if delta:
+                r["delta"] = delta
         key = (acct, (r.get("cusip") or "").strip() or ticker)
         if not (r.get("invCountry") or "").strip() and key in inv:
             r["invCountry"] = inv[key]
         if not (r.get("isin") or "").strip() and key in isins:
             r["isin"] = isins[key]
+        liq = liquidity.get(key)
+        if liq:
+            for column in ("liquidityClassificationJson", "liquidityCircumstancesJson"):
+                if (liq.get(column) or "").strip():
+                    r[column] = liq[column]
 
 
 def split_master(
