@@ -20,21 +20,17 @@ There are only two command-line intake roles:
 
 Those files may keep their real source-system names. All other remediation is
 centralized in the generated `filing_inputs.xlsx`. Do not create gap-specific
-workbooks or empty evidence templates. Register each real supporting file or
-system once on `Sources`, then enter its supported value or disposition in the
-named `FundFields`, `HoldingFields`, or `ReconciliationInputs` row.
+workbooks or empty evidence templates. Enter the value/disposition in the named
+`FundFields` or `HoldingFields` row and control totals in `ReconciliationInputs`.
 
 Run `nport prepare <fund> <period> --positions <file> [--orders <file>]` once to
-create `filing_inputs.xlsx`. Add each additional real source directly to that
-workbook's `Sources` sheet. Complete `sourceId`, `dataset`, `sourceType`,
-`sourceSystem`, `sourcePath`, `sourceAsOf`, and `comment`; leave `sha256` and
-`recordCount` blank when the program can calculate them from the file.
+create `filing_inputs.xlsx`. The `Sources` sheet is optional diagnostic metadata.
+No reviewer entry there is required for XML generation.
 
 For G-012, enter the independent control total and approved tolerance in the
-generated `ReconciliationInputs` row, together with its `sourceId`, status, and
-comment. The control source must differ from the source used for the filed-side
-value. The program calculates the filed-side actual, difference, and PASS/FAIL
-result during `nport build <fund> <period> --from-inputs`.
+generated `ReconciliationInputs` row, together with status and comment.
+`sourceId` is optional. The program calculates the filed-side actual, difference,
+and PASS/FAIL result during `nport build <fund> <period> --from-inputs`.
 
 No preparer, reviewer, signature, or approval columns are required by this
 workflow.

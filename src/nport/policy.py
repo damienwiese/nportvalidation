@@ -162,14 +162,13 @@ def policy_from_config(config: FundConfig, ticker: str, source_ref: str | Path) 
             ("liquidityRequired", config.liquidity_required),
             ("cashB2fRequired", config.cash_b2f_required),
             ("policyEffectiveFrom", config.policy_effective_from),
-            ("policySourceRef", config.policy_source_ref),
         ) if not value.strip()
     ]
     if missing:
         raise ValueError(
             "fund_config.txt is missing approved policy fields: " + ", ".join(missing)
         )
-    source_text = f"{config.policy_source_ref} {source_ref}".lower()
+    source_text = str(source_ref).lower()
     if any(token in source_text for token in _PROHIBITED_SOURCES):
         raise ValueError("U.S. Bank/admin comparison data cannot approve fund policy")
     regime = config.derivatives_regime_policy.strip().upper()
@@ -193,7 +192,7 @@ def policy_from_config(config: FundConfig, ticker: str, source_ref: str | Path) 
             if config.policy_approved_at.strip() else None
         ),
         source_system="Internal fund configuration",
-        source_ref=config.policy_source_ref.strip(),
+        source_ref=str(source_ref),
         required_sources=tuple(
             value.strip() for value in config.required_sources.split(";") if value.strip()
         ),

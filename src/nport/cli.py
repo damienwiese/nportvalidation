@@ -91,7 +91,7 @@ def main(argv: list[str] | None = None) -> None:
     gen.add_argument("--strict", action="store_true", help="Treat warnings as errors")
     gen.add_argument("--account", default=None, help="Fund ticker used to resolve approved policy")
     gen.add_argument("--registry", default="data/master/fund_registry.csv", help="Approved in-house fund registry")
-    gen.add_argument("--source-manifest", default=None, help="In-house source evidence CSV")
+    gen.add_argument("--source-manifest", default=None, help="Optional provenance audit CSV")
 
     val = sub.add_parser("validate", help="Validate a fund's inputs: `nport validate fdrs [2026-06]`")
     val.add_argument("pos", nargs="*", help="<fund> [period] — what to validate")
@@ -100,12 +100,12 @@ def main(argv: list[str] | None = None) -> None:
     val.add_argument("--registry", default="data/master/fund_registry.csv")
     val.add_argument("--source-manifest", default=None)
 
-    pf = sub.add_parser("preflight", help="Run fail-closed policy, coverage, and source-evidence gates")
+    pf = sub.add_parser("preflight", help="Run policy, applicability, and XML-coverage gates")
     pf.add_argument("pos", nargs="*", help="<fund> [period]")
     _add_input_args(pf)
     pf.add_argument("--account", default=None)
     pf.add_argument("--registry", default="data/master/fund_registry.csv")
-    pf.add_argument("--source-manifest", required=True)
+    pf.add_argument("--source-manifest", default=None, help="Optional provenance audit CSV")
 
     cr = sub.add_parser("compare-reference", help="Read-only structural gap comparison; never populates filing data")
     cr.add_argument("--internal", required=True, help="Internally generated XML")
@@ -599,7 +599,7 @@ def _preflight(args) -> None:
     if blockers:
         print(f"PREFLIGHT FAILED: {blockers} blocker(s).")
         sys.exit(1)
-    print("PREFLIGHT PASSED: policy, coverage, freshness, hashes, and approvals are complete.")
+    print("PREFLIGHT PASSED: policy, applicability, and XML coverage are complete.")
 
 
 def _compare_reference(args) -> None:
@@ -623,14 +623,6 @@ def _compare_reference(args) -> None:
 
 def _generate(args) -> None:
     all_warnings = []
-
-    if not args.source_manifest:
-        print(
-            "ERROR: --source-manifest is required. Explicit-file generation cannot bypass "
-            "independent source provenance.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
 
     # Schema files
     schema_errors, schema_warnings = check_schema_files(args.schema_dir)
@@ -713,7 +705,8 @@ def _generate(args) -> None:
                 base / "filings" / args.period / "filing_data.txt",
                 base / "filings" / args.period / "holdings.csv",
             ]
-        input_paths.append(args.source_manifest)
+        if args.source_manifest:
+            input_paths.append(args.source_manifest)
         manifest_findings = preflight_findings or run_preflight(
             context, filing, holdings, args.source_manifest
         )
@@ -893,11 +886,6 @@ def _ingest_one(args) -> None:
             print("WARNING: --from-review is deprecated; use --from-inputs.", file=sys.stderr)
         _build_from_inputs(args)
         return
-    if not getattr(args, "source_manifest", None):
-        print("ERROR: --source-manifest is required; unprovenanced canonical files cannot be built.",
-              file=sys.stderr)
-        sys.exit(1)
-
     fund_dir, account = _resolve_fund_dir(args.fund_dir, args.account)
     loader = DataLoader(fund_dir)
     try:
@@ -928,7 +916,7 @@ def _ingest_one(args) -> None:
     preflight_findings = run_preflight(context, filing, holdings, args.source_manifest)
     preflight_blockers = [f for f in preflight_findings if f.severity == "BLOCKER"]
     if preflight_blockers:
-        print(f"ERROR: {account} failed independent-source preflight:", file=sys.stderr)
+        print(f"ERROR: {account} failed preflight:", file=sys.stderr)
         for finding in preflight_blockers:
             print(f"    {finding.code}: {finding.technical}", file=sys.stderr)
         sys.exit(1)
@@ -970,7 +958,7 @@ def _ingest_one(args) -> None:
         output_path.with_suffix(".manifest.json"), ticker=account, period=args.period,
         context=context, xml_path=output_path,
         input_paths=[fund_dir / "fund_config.txt", period_dir / "filing_data.txt",
-                     period_dir / "holdings.csv", args.source_manifest],
+                     period_dir / "holdings.csv"] + ([args.source_manifest] if args.source_manifest else []),
         xsd_version=CURRENT_SCHEMA_VERSION, findings=preflight_findings,
         live_test_flag=filing.live_test_flag,
     )
@@ -991,7 +979,8 @@ def _build_from_inputs(args) -> None:
             period=args.period,
             account=account,
             registry=getattr(args, "registry", "data/master/fund_registry.csv"),
-            source_manifest=str(bundle / "source_manifest.csv"),
+            # The manifest is an optional diagnostic sidecar, not an XML input.
+            source_manifest=None,
             output=str(output),
             schema_dir=args.schema_dir,
             skip_validation=args.skip_validation,

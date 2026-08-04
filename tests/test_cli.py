@@ -149,7 +149,7 @@ def test_live_gate_blocks_when_no_report(tmp_path, monkeypatch):
 def test_input_findings_print_category_and_exact_location(capsys):
     finding = Finding(
         "G-002:netAssets", "BLOCKER",
-        "FundFields[recordKey='FUND', fieldName='netAssets'] -> complete proposedValue, sourceId, status, and comment when needed",
+        "FundFields[recordKey='FUND', fieldName='netAssets'] -> complete proposedValue and status, or a factual NOT_APPLICABLE comment",
         "netAssets is an open input.",
     )
     climod._print_review_blockers([finding])

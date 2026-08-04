@@ -9,7 +9,6 @@ from openpyxl import load_workbook
 
 from nport.config import _CONFIG_KEY_MAP, _FILING_KEY_MAP, parse_filing
 from nport.fund_review import evaluate_inputs, finalize_inputs, prepare_inputs
-from nport.preflight import sha256_file
 
 
 def _sheet_rows(workbook: Path, sheet: str):
@@ -63,12 +62,14 @@ def test_prepare_inputs_creates_simple_workbook_and_bloomberg_formulas(tmp_path,
     assert len(list(wb["GapGuide"].iter_rows(min_row=2, values_only=True))) == 13
     guide = {row["gapId"]: row for row in _sheet_rows(workbook, "GapGuide")}
     assert "FundFields[gapId starts G-002]" in guide["G-002"]["rowToFind"]
-    assert guide["G-013"]["inputSheet"] == "No workbook field closes this item"
+    assert guide["G-013"]["inputSheet"] == "No workbook entry"
     totals = [row for row in _sheet_rows(workbook, "FundFields")
               if row["fieldName"] == "totAssets"]
     assert totals[0]["currentValue"] == ""
     assert totals[0]["proposedValue"] == ""
     assert totals[0]["status"] == "MISSING"
+    assert not any(row["fieldName"] == "policySourceRef"
+                   for row in _sheet_rows(workbook, "FundFields"))
 
 
 def test_prohibited_us_bank_source_is_reported_as_blocker(tmp_path, fdrs_dir):
@@ -107,45 +108,16 @@ def test_missing_reconciliation_input_sheet_fails_closed(tmp_path, fdrs_dir):
     assert "create ReconciliationInputs" in findings[0].technical
 
 
-def test_supplied_inputs_finalize_clean_traceable_bundle(tmp_path, fdrs_dir):
+def test_supplied_inputs_finalize_without_required_source_metadata(tmp_path, fdrs_dir):
     fund_dir = tmp_path / "fdrs"
     fund_dir.mkdir()
     shutil.copyfile(fdrs_dir / "fund_config.txt", fund_dir / "fund_config.txt")
     positions = tmp_path / "internal_positions.csv"
     shutil.copyfile(fdrs_dir / "filings" / "2025-12" / "holdings.csv", positions)
-    support = tmp_path / "internal_accounting_and_policy.csv"
-    support.write_text("control,value\nperiod,2025-12-31\n", encoding="utf-8")
-    control = tmp_path / "independent_reconciliation_control.csv"
-    control.write_text("control,value\nperiod,2025-12-31\n", encoding="utf-8")
     workbook = prepare_inputs(fund_dir, "2025-12", positions=positions)
     filing = parse_filing(fdrs_dir / "filings" / "2025-12" / "filing_data.txt")
 
-    source_as_of = "2025-12-31"
     wb = load_workbook(workbook)
-
-    sources = wb["Sources"]
-    source_headers = {cell.value: cell.column for cell in sources[1]}
-    for field, value in {
-        "sourceSystem": "Internal OMS", "sourceAsOf": source_as_of,
-    }.items():
-        sources.cell(2, source_headers[field], value)
-    evidence = {
-        "sourceId": "EVIDENCE", "dataset": "internal_fund_accounting_and_policy",
-        "sourceType": "INTERNAL_CONTROL_PACKAGE", "sourceSystem": "Internal books and records",
-        "sourcePath": str(support), "sourceAsOf": source_as_of,
-        "sha256": "", "recordCount": "",
-        "comment": "Synthetic test evidence",
-    }
-    sources.append([evidence.get(sources.cell(1, column).value, "")
-                    for column in range(1, sources.max_column + 1)])
-    recon_source = {
-        "sourceId": "CONTROL", "dataset": "internal_reconciliation_control",
-        "sourceType": "INTERNAL_CONTROL_REPORT", "sourceSystem": "Internal control ledger",
-        "sourcePath": str(control), "sourceAsOf": source_as_of,
-        "sha256": "", "recordCount": "", "comment": "Synthetic independent control",
-    }
-    sources.append([recon_source.get(sources.cell(1, column).value, "")
-                    for column in range(1, sources.max_column + 1)])
 
     policy_values = {
         "fiscalYearEndMMDD": "12-31", "derivativesRegimePolicy": "NONE",
@@ -172,14 +144,14 @@ def test_supplied_inputs_finalize_clean_traceable_bundle(tmp_path, fdrs_dir):
         else:
             fields.cell(rownum, field_headers["proposedValue"], str(value))
             fields.cell(rownum, field_headers["status"], "PROVIDED")
-        fields.cell(rownum, field_headers["sourceId"], "EVIDENCE")
+        fields.cell(rownum, field_headers["sourceId"], "")
 
     holdings = wb["HoldingFields"]
     holding_headers = {cell.value: cell.column for cell in holdings[1]}
     for rownum in range(2, holdings.max_row + 1):
         current = holdings.cell(rownum, holding_headers["currentValue"]).value or ""
         holdings.cell(rownum, holding_headers["status"], "PROVIDED" if current else "NOT_APPLICABLE")
-        holdings.cell(rownum, holding_headers["sourceId"], "POSITIONS")
+        holdings.cell(rownum, holding_headers["sourceId"], "")
         if not current:
             holdings.cell(rownum, holding_headers["comment"], "Not applicable in source record")
 
@@ -203,7 +175,7 @@ def test_supplied_inputs_finalize_clean_traceable_bundle(tmp_path, fdrs_dir):
             comment = "Filed flow is not applicable" if status == "NOT_APPLICABLE" else "Independent flow control"
         recon.cell(rownum, recon_headers["controlValue"], str(value))
         recon.cell(rownum, recon_headers["tolerance"], "0.01" if status == "PROVIDED" else "")
-        recon.cell(rownum, recon_headers["sourceId"], "CONTROL")
+        recon.cell(rownum, recon_headers["sourceId"], "")
         recon.cell(rownum, recon_headers["status"], status)
         recon.cell(rownum, recon_headers["comment"], comment)
 
@@ -223,7 +195,7 @@ def test_supplied_inputs_finalize_clean_traceable_bundle(tmp_path, fdrs_dir):
     assert "fund_config.txt,FUND,cik" in provenance
     assert "filing_data.txt,FUND,totAssets" in provenance
     manifest = (bundle / "source_manifest.csv").read_text(encoding="utf-8")
-    assert sha256_file(support) in manifest
+    assert "internal_positions" in manifest
 
 
 def test_legacy_human_review_is_migrated_without_signoff_columns(tmp_path, fdrs_dir):

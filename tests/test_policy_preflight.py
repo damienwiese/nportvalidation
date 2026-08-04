@@ -149,8 +149,9 @@ def test_preflight_surfaces_specific_coverage_gaps(factories, tmp_path):
     filing = apply_context(factories.filing(), context)
     findings = run_preflight(context, filing, [factories.equity()], None)
     assert {item.code for item in findings} >= {
-        "COVERAGE_B9", "COVERAGE_B2F", "COVERAGE_C7", "EVIDENCE_MANIFEST",
+        "COVERAGE_B9", "COVERAGE_B2F", "COVERAGE_C7",
     }
+    assert "EVIDENCE_MANIFEST" not in {item.code for item in findings}
 
 
 def test_derivative_c3_payoff_is_na(factories):

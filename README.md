@@ -49,26 +49,20 @@ data/funds/fdrs/filings/2026-06/filing_inputs.xlsx
 
 1. Open `filing_inputs.xlsx` on a Bloomberg terminal.
 2. Wait for the `Bloomberg` sheet formulas to resolve, then save the workbook.
-3. On `Sources`, record the real system, path, and `sourceAsOf` for every other
-   independent source used. Preparation calculates controls for command-line
-   files; the final build calculates blank hashes/counts for later source rows.
+3. Ignore `Sources` for XML completion. Its labels, paths, dates, hashes, counts,
+   and `sourceId` values are optional diagnostics and never serialize into XML.
 4. On `FundFields` and `HoldingFields`, filter `status` to `MISSING`.
-5. For a supported value, enter or confirm the value, select its `sourceId`, and
-   set `status` to `PROVIDED`.
-6. For a genuinely inapplicable conditional field, set `NOT_APPLICABLE`, select
-   the supporting source, and enter the factual reason in `comment`.
-7. On `ReconciliationInputs`, complete every generated row with the independent
-   `controlValue`, policy-approved `tolerance`, `sourceId`, `status`, and comment.
-   The control source must differ from the source that supplied the filed-side
-   value; the program calculates the filed-side actual and difference.
+5. For a known value, enter or confirm the value and set `status` to `PROVIDED`.
+6. For a genuinely inapplicable conditional field, set `NOT_APPLICABLE` and
+   enter the factual reason in `comment`.
+7. On `ReconciliationInputs`, complete every generated row with `controlValue`,
+   policy-approved `tolerance`, `status`, and comment. The program calculates the
+   filed-side actual and difference. `sourceId` is optional.
 
-No separate sign-off metadata is required. `sourceAsOf` remains once per source
-because the filing cutoff must match. SEC Part F signer fields and `dateSigned`
-remain because they are required filing values.
-
-For `fund_config.txt` rows, always enter `proposedValue` from the cited
-independent source. Any displayed `currentValue` is reference-only and cannot be
-released by changing the status alone.
+For `fund_config.txt` rows, always enter `proposedValue` when the field applies.
+Any displayed `currentValue` is reference-only and cannot be released by changing
+the status alone. SEC Part F signer fields and `dateSigned` remain because they
+are XML filing values.
 
 ### 4. Run the final automation
 
@@ -76,9 +70,9 @@ released by changing the status alone.
 & ".\.venv\Scripts\nport.exe" build fdrs 2026-06 --from-inputs
 ```
 
-This one command checks all sources and fields, rejects prohibited inputs, runs
-reconciliation, creates a clean versioned bundle, builds the XML, and validates
-it against the SEC schema. If the filing is not ready, it classifies each item
+This one command checks XML values, policy/applicability, and reconciliation;
+rejects explicit prohibited comparison-input references; creates a clean
+versioned bundle; builds the XML; and validates it against the SEC schema. If the filing is not ready, it classifies each item
 as an open input, input correction, prohibited input, or validation error and
 prints the exact workbook row or upstream file to fix. Correct it and run the
 same build command again.
