@@ -7,6 +7,7 @@ import pytest
 
 import nport.cli as climod
 from nport.cli import main
+from nport.preflight import Finding
 
 
 class TestBuildAllFunds:
@@ -143,3 +144,15 @@ def test_live_gate_blocks_when_no_report(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "_MASTER_DIR", tmp_path)
     reasons = cli._live_gate_reasons("FDRS", "2026-06")
     assert reasons and "reconciliation report" in reasons[0]
+
+
+def test_input_findings_print_category_and_exact_location(capsys):
+    finding = Finding(
+        "G-002:netAssets", "BLOCKER",
+        "FundFields[recordKey='FUND', fieldName='netAssets'] -> complete proposedValue, sourceId, status, and comment when needed",
+        "netAssets is an open input.",
+    )
+    climod._print_review_blockers([finding])
+    output = capsys.readouterr().out
+    assert "OPEN INPUT G-002:netAssets" in output
+    assert "Location: FundFields[recordKey='FUND', fieldName='netAssets']" in output

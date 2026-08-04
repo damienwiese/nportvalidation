@@ -1,7 +1,7 @@
-"""Fund-period human review, provenance, and clean canonical finalization.
+"""Fund-period inputs, provenance, and clean canonical finalization.
 
 This module creates places for missing values; it never supplies business data.
-Every accepted human value must cite an approved, non-U.S.-Bank source file.
+Every supplied value must cite an independent, non-U.S.-Bank source.
 """
 
 from __future__ import annotations
@@ -10,7 +10,9 @@ import csv
 import json
 import os
 import tempfile
+from collections import Counter
 from dataclasses import asdict, fields, replace
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -25,24 +27,40 @@ from nport.config import (
 )
 from nport.input_validation import validate_all
 from nport.models import FilingData, FundConfig, Holding
+from nport.filing_master import _month_ranges, _return_formula
+from nport.master_sheet import (
+    BLOOMBERG_SPECS, _bbg_spec_key, _bloomberg_formula,
+    _normalize_coupon_kind, _normalize_date,
+)
 from nport.policy import apply_context, derive_context_from_config, report_date_for_period
 from nport.preflight import Finding, _is_prohibited_source, sha256_file
 from nport.schema import FIELD_SPECS, get_required_fields
 
 
-REVIEW_FILENAME = "human_review.xlsx"
+INPUT_FILENAME = "filing_inputs.xlsx"
+LEGACY_REVIEW_FILENAME = "human_review.xlsx"
 
 FIELD_HEADERS = [
     "gapId", "targetFile", "recordKey", "fieldName", "currentValue",
-    "proposedValue", "sourceId", "sourceAsOf", "status", "reviewer",
-    "reviewedAt", "comment",
+    "proposedValue", "sourceId", "status", "comment",
 ]
 SOURCE_HEADERS = [
     "sourceId", "dataset", "sourceType", "sourceSystem", "sourcePath",
-    "sourceAsOf", "acquiredAt", "sha256", "recordCount", "preparedBy",
-    "reviewedBy", "reviewedAt", "status", "comment",
+    "sourceAsOf", "sha256", "recordCount", "comment",
 ]
-APPROVAL_HEADERS = ["role", "name", "approvedAt", "status", "comment"]
+BLOOMBERG_HEADERS = [
+    "targetFile", "recordKey", "fieldName", "bbgid", "mnemonic", "value",
+]
+RECON_INPUT_HEADERS = [
+    "checkId", "category", "actualBasis", "controlValue", "tolerance",
+    "sourceId", "status", "comment",
+]
+
+FLOW_RECON_FIELDS = (
+    "mon1Sales", "mon1Redemption", "mon1Reinvestment",
+    "mon2Sales", "mon2Redemption", "mon2Reinvestment",
+    "mon3Sales", "mon3Redemption", "mon3Reinvestment",
+)
 
 POLICY_FIELDS = {
     "fiscalYearEndMMDD": "fiscal_year_end_mmdd",
@@ -51,8 +69,6 @@ POLICY_FIELDS = {
     "cashB2fRequired": "cash_b2f_required",
     "policyEffectiveFrom": "policy_effective_from",
     "policyEffectiveTo": "policy_effective_to",
-    "policyApprovedBy": "policy_approved_by",
-    "policyApprovedAt": "policy_approved_at",
     "policySourceRef": "policy_source_ref",
 }
 
@@ -62,56 +78,123 @@ SYSTEM_DERIVED_FILING = {
 
 SENSITIVE_HOLDING_GROUPS = {"debt", "deriv_common", "option", "ref_instrument", "swap", "liquidity"}
 
+GAP_GUIDE_HEADERS = [
+    "gapId", "category", "gap", "inputSheet", "rowToFind",
+    "columnsToComplete", "sourceRow", "completionRule", "requiredFiles",
+]
+
 GAP_GUIDE = [
-    ("G-001", "Independent position population", "data/intake/<period>/<fund>/positions.csv", "Sources + HoldingFields",
-     "Attach an independently produced period-end positions CSV. Review every surfaced holding exception."),
-    ("G-002", "Independent fund-accounting close", "accounting_close.csv or accounting_close.pdf", "Sources + FundFields",
-     "Add the approved internal GL/NAV close as a source, then enter each supported filing-level value."),
-    ("G-003", "Create/redeem flows", "create_redeem_orders.csv; reinvestment_support.csv if applicable", "Sources + FundFields",
-     "Attach the internal order export. Calculated sales/redemptions still require review; reinvestment needs separate evidence."),
-    ("G-004", "Fund policy and static data", "fund_policy_approval.pdf; fund_static_data.csv", "FundFields",
-     "Confirm every fund configuration and effective-dated policy value from internal governance evidence."),
-    ("G-005", "Source manifest", "human_review.xlsx -> source_manifest.csv", "Sources",
-     "Complete cutoff, capture time, hash, count, preparer, reviewer, and approval for every source used."),
-    ("G-006", "Prohibited legacy inputs", "data/custodian/*; data/fund_accounting/*; data/master/*.xlsx; legacy data/funds/* files", "Sources",
-     "Do not cite U.S. Bank, EagleSTAR, prepared filings, current masters, or files derived from them."),
-    ("G-007", "Human-review evidence", "human_review.xlsx -> field_provenance.csv and review_receipt.json", "FundFields + HoldingFields + Approvals",
-     "Every accepted value or not-applicable disposition needs a source, reviewer, timestamp, and explanation."),
-    ("G-008", "Swap economics", "swap_trade_export.csv; executed_swap_confirmations.pdf", "HoldingFields",
-     "Resolve surfaced swap terms from internal trade capture or an independently retained executed confirmation."),
-    ("G-009", "Conditional filing sections", "cash_ledger.csv; risk_metrics.csv; rule_18f4_results.csv; var_backtesting.csv; monthly_return_categories.csv", "FundFields",
-     "Enter B.2.f/B.3/B.5.c/B.9/B.10 data from internal accounting or risk evidence, or document not-applicable."),
-    ("G-010", "Liquidity classification", "liquidity_classifications.csv; liquidity_circumstances.csv if applicable", "HoldingFields",
-     "Enter C.7 classifications from the internal liquidity-risk process for each applicable holding."),
-    ("G-011", "Option terms and delta", "option_trade_terms.csv; option_delta.csv", "HoldingFields",
-     "Confirm option terms and delta from internal trade/risk evidence at the reporting cutoff."),
-    ("G-012", "Reconciliation", "reconciliation.csv; positions_to_gl_reconciliation.csv; flow_reconciliation.csv; derivatives_reconciliation.csv", "Reconciliation",
-     "Clear automated count and NAV-equation exceptions; retain the supporting internal control report."),
-    ("G-013", "Origin assurance", "source_origin_attestation.pdf; review_receipt.json", "Sources + review receipt",
-     "Local hashes catch changed or exact known files; reviewers must attest to origin because this local workflow has no authenticated connector."),
+    ("G-001", "OPEN INPUT", "Independent position population", "CLI + Sources + HoldingFields",
+     "Run prepare with --positions; then Sources[sourceId=POSITIONS] and HoldingFields[gapId starts G-001]",
+     "Sources: sourceSystem, sourceAsOf, comment. Holding exceptions: proposedValue, sourceId, status, comment",
+     "POSITIONS is generated by prepare; do not type the base population into Excel",
+     "Position file loads, source count ties, and no G-001 holding exception remains MISSING",
+     "data/intake/<period>/<fund>/positions.csv"),
+    ("G-002", "OPEN INPUT", "Independent fund-accounting close", "Sources + FundFields",
+     "Sources[sourceId=<accounting ID>] and FundFields[gapId starts G-002]",
+     "Sources: all columns except sha256/recordCount when blank. FundFields: proposedValue, sourceId, status, comment",
+     "Add one source row for the actual internal GL/NAV close",
+     "Every applicable G-002 row is PROVIDED from that source and the NAV equation passes",
+     "accounting_close.csv or accounting_close.pdf"),
+    ("G-003", "OPEN INPUT / PARTLY AUTOMATED", "Create/redeem flows", "CLI + Sources + FundFields",
+     "Pass --orders to prepare; then Sources[sourceId=ORDERS] and FundFields[gapId starts G-003]",
+     "Sources: sourceSystem, sourceAsOf, comment. Only unresolved flow rows: proposedValue, sourceId, status, comment",
+     "ORDERS is generated by prepare; add a separate source row for reinvestment evidence when needed",
+     "Calculated sales/redemptions are present and every remaining applicable flow row is resolved",
+     "create_redeem_orders.csv; reinvestment_support.csv if applicable"),
+    ("G-004", "OPEN INPUT", "Fund policy and static data", "Sources + FundFields",
+     "Sources[sourceId=<policy/static ID>] and FundFields[targetFile=fund_config.txt]",
+     "FundFields: proposedValue, sourceId, status, comment. currentValue is reference-only",
+     "Add the actual internal policy/static-data source row or rows",
+     "Every applicable fund_config.txt row has a source-backed proposedValue or factual NOT_APPLICABLE disposition",
+     "fund_policy_record.pdf; fund_static_data.csv"),
+    ("G-005", "IMPLEMENTED CONTROL", "Source manifest", "Sources",
+     "One Sources row for every sourceId used in FundFields or HoldingFields",
+     "sourceId, dataset, sourceType, sourceSystem, sourcePath, sourceAsOf, comment; build calculates blank hash/count for files",
+     "No separate manifest entry is typed; build writes source_manifest.csv",
+     "Every used sourceId resolves to one complete, current, non-prohibited Sources row",
+     "filing_inputs.xlsx -> source_manifest.csv"),
+    ("G-006", "ENFORCED CONTROL", "Prohibited comparison inputs", "Sources + source files",
+     "Any Sources row or supplied path naming U.S. Bank, EagleSTAR, prepared filings, or legacy masters",
+     "Do not enter replacement data here; remove the prohibited row/path and replace dependent sourceIds with an independent source",
+     "No prohibited source row is permitted",
+     "Prohibited-source checks pass and disabled legacy writers remain unused",
+     "comparison-only files under data/custodian, data/fund_accounting, data/master, and legacy data/funds"),
+    ("G-007", "IMPLEMENTED CONTROL", "Manual input trace", "FundFields + HoldingFields + Sources",
+     "Every row with status PROVIDED or NOT_APPLICABLE",
+     "PROVIDED: proposed/current value plus sourceId. NOT_APPLICABLE: sourceId plus factual comment",
+     "The cited sourceId must exist as one complete Sources row",
+     "Build writes field_provenance.csv and input_receipt.json with no unresolved input rows",
+     "filing_inputs.xlsx -> field_provenance.csv and input_receipt.json"),
+    ("G-008", "CONDITIONAL OPEN INPUT", "Swap economics", "Sources + HoldingFields",
+     "Sources[sourceId=<swap source ID>] and HoldingFields[gapId starts G-008] for each swap recordKey",
+     "HoldingFields: proposedValue, sourceId, status, comment",
+     "Add the actual internal swap trade/confirmation source row",
+     "Every required swap field is resolved and canonical derivative validation passes",
+     "swap_trade_export.csv; executed_swap_confirmations.pdf"),
+    ("G-009", "CONDITIONAL OPEN INPUT", "B.2.f / B.3 / B.5.c / B.9 / B.10", "Sources + FundFields",
+     "FundFields[gapId starts G-009]; add the cited accounting/risk source on Sources",
+     "FundFields: proposedValue, sourceId, status, comment",
+     "Use a distinct sourceId for each actual accounting/risk dataset when origins differ",
+     "Each applicable row is PROVIDED; each inapplicable row is NOT_APPLICABLE with source and factual reason",
+     "cash_ledger.csv; risk_metrics.csv; rule_18f4_results.csv; var_backtesting.csv; monthly_return_categories.csv"),
+    ("G-010", "CONDITIONAL OPEN INPUT", "C.7 liquidity", "Sources + HoldingFields",
+     "Sources[sourceId=<liquidity source ID>] and HoldingFields[gapId starts G-010] for each recordKey",
+     "HoldingFields: proposedValue, sourceId, status, comment",
+     "Add the actual internal liquidity-risk source row",
+     "Every applicable holding has a supported liquidityClassificationJson and any required circumstances",
+     "liquidity_classifications.csv; liquidity_circumstances.csv if applicable"),
+    ("G-011", "CONDITIONAL OPEN INPUT", "Option terms and delta", "Sources + HoldingFields",
+     "Sources[sourceId=<option/risk source ID>] and HoldingFields[gapId starts G-011] for each option recordKey",
+     "HoldingFields: proposedValue, sourceId, status, comment",
+     "Add the actual internal option trade/risk source row",
+     "Every required option/reference field is resolved and canonical option validation passes",
+     "option_trade_terms.csv; option_delta.csv"),
+    ("G-012", "IMPLEMENTED RECONCILIATION INPUT", "Independent reconciliation", "Sources + ReconciliationInputs; results in reconciliation.csv",
+     "ReconciliationInputs[checkId=POSITIONS_TO_GL/FLOW:<field>/DERIVATIVE_* when generated]",
+     "controlValue, tolerance, sourceId, status, comment; never type the filed-side actual value",
+     "Add the actual independent GL, transfer-agent/accounting, or derivatives-control source on Sources; it must differ from the source used for the filed value",
+     "Every generated check is PROVIDED or factually NOT_APPLICABLE; build-calculated difference is within tolerance; NAV and count also PASS",
+     "independent reconciliation evidence; filing_inputs.xlsx -> reconciliation.csv"),
+    ("G-013", "TRUE TECHNICAL LIMITATION", "Authenticated origin assurance", "No workbook field closes this item",
+     "Sources records the claimed system/path, but a local file cannot authenticate its origin",
+     "None. Do not enter a value claiming this control is technically proven",
+     "An authenticated source connector or an explicitly accepted external governance control is required",
+     "Not technically closable inside filing_inputs.xlsx",
+     "actual independent source files; input_receipt.json"),
 ]
 
 
 class ReviewBlocked(ValueError):
-    """Raised when a review package has unresolved release blockers."""
+    """Compatibility exception raised when inputs are not ready for release."""
 
     def __init__(self, blockers: list[Finding]):
         self.blockers = blockers
-        super().__init__(f"review package has {len(blockers)} blocker(s)")
+        super().__init__(f"input workbook has {len(blockers)} open input/error item(s)")
+
+
+def input_path(fund_dir: str | Path, period: str, *, existing: bool = False) -> Path:
+    destination = Path(fund_dir) / "filings" / period / INPUT_FILENAME
+    if existing and not destination.is_file():
+        legacy = destination.with_name(LEGACY_REVIEW_FILENAME)
+        if legacy.is_file():
+            return legacy
+    return destination
 
 
 def review_path(fund_dir: str | Path, period: str) -> Path:
-    return Path(fund_dir) / "filings" / period / REVIEW_FILENAME
+    """Compatibility alias for callers that still use the old function name."""
+    return input_path(fund_dir, period, existing=True)
 
 
 def _hash(path: Path) -> str:
     return sha256_file(path)
 
 
-def _read_sheet(path: Path, sheet: str) -> list[dict[str, str]]:
+def _read_sheet(path: Path, sheet: str, *, data_only: bool = True) -> list[dict[str, str]]:
     if not path.is_file():
         return []
-    wb = load_workbook(path, data_only=True, read_only=True)
+    wb = load_workbook(path, data_only=data_only, read_only=True)
     if sheet not in wb.sheetnames:
         return []
     rows = list(wb[sheet].iter_rows(values_only=True))
@@ -135,14 +218,13 @@ def _field_key(row: dict[str, str]) -> tuple[str, str, str]:
 
 def _merge_preserved(
     generated: list[dict[str, str]], existing: list[dict[str, str]],
-    key_fn,
+    key_fn, *, legacy: bool = False,
 ) -> list[dict[str, str]]:
     prior = {key_fn(row): row for row in existing}
     editable = {
-        "proposedValue", "sourceId", "sourceAsOf", "status", "reviewer",
-        "reviewedAt", "comment", "preparedBy", "reviewedBy", "dataset",
-        "sourceType", "sourceSystem", "sourcePath", "acquiredAt", "recordCount",
-        "name", "approvedAt",
+        "proposedValue", "sourceId", "sourceAsOf", "status", "comment",
+        "dataset", "sourceType", "sourceSystem", "sourcePath", "recordCount",
+        "controlValue", "tolerance",
     }
     out = []
     for row in generated:
@@ -151,7 +233,20 @@ def _merge_preserved(
         if old:
             for key in editable:
                 if old.get(key, ""):
-                    merged[key] = old[key]
+                    value = old[key]
+                    if key == "status":
+                        normalized = value.strip().upper()
+                        if legacy and normalized not in {"SYSTEM_DERIVED", "SYSTEM_CONTROL"}:
+                            # Preserve the old value for reference, but never carry an old
+                            # acceptance decision into the independent workflow.
+                            value = "MISSING"
+                        else:
+                            value = {
+                                "APPROVED": "PROVIDED",
+                                "NEEDS_REVIEW": "MISSING",
+                                "PENDING": "MISSING",
+                            }.get(normalized, value)
+                    merged[key] = value
         out.append(merged)
     for key, old in prior.items():
         if key not in {key_fn(row) for row in generated}:
@@ -200,7 +295,7 @@ def _add_list_validation(ws, header: str, values: list[str]) -> None:
     )
     validation.error = "Choose one of the controlled workflow statuses."
     validation.errorTitle = "Invalid status"
-    validation.prompt = "Select the status that matches the evidence and review state."
+    validation.prompt = "Select the status that matches the supplied evidence."
     validation.promptTitle = "Controlled status"
     validation.showErrorMessage = True
     validation.showInputMessage = True
@@ -215,24 +310,23 @@ def _gap_row(
     return {
         "gapId": gap_id, "targetFile": target, "recordKey": key,
         "fieldName": field, "currentValue": current, "proposedValue": "",
-        "sourceId": "", "sourceAsOf": "", "status": status,
-        "reviewer": "", "reviewedAt": "", "comment": comment,
+        "sourceId": "", "status": status, "comment": comment,
     }
 
 
 def _config_rows(config: FundConfig) -> list[dict[str, str]]:
     rows = []
     for external, attr in _CONFIG_KEY_MAP.items():
-        if external == "requiredSources":
-            # Derived from the approved rows on Sources; operators do not type it.
+        if external in {"requiredSources", "policyApprovedBy", "policyApprovedAt"}:
+            # Derived source coverage and retired approval metadata are not typed.
             continue
         value = getattr(config, attr, "")
         is_policy = external in POLICY_FIELDS
         rows.append(_gap_row(
             f"G-004:{external}", "fund_config.txt", "FUND", external, value,
-            "NEEDS_REVIEW" if value else "MISSING",
-            ("Confirm from an approved internal policy/governance record."
-             if is_policy else "Confirm from approved internal legal/entity/static-data evidence."),
+            "MISSING",
+            ("Confirm from an independent internal policy/governance record."
+             if is_policy else "Confirm from independent internal legal/entity/static-data evidence."),
         ))
     return rows
 
@@ -281,7 +375,40 @@ def _raw_positions(path: Path) -> tuple[list[str], list[dict[str, str]]]:
     return _holding_ids(rows), rows
 
 
-def _holding_review_rows(path: Path | None) -> list[dict[str, str]]:
+def _bloomberg_rows(path: Path | None, ticker: str, period: str) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    fund_bbgid = f"{ticker.upper()} US Equity"
+    for field, (start, end) in zip(("rtn1", "rtn2", "rtn3"), _month_ranges(period)):
+        rows.append({
+            "targetFile": "filing_data.txt", "recordKey": "FUND", "fieldName": field,
+            "bbgid": fund_bbgid, "mnemonic": "CUST_TRR_RETURN_HOLDING_PER",
+            "formulaFactory": lambda cell, s=start, e=end: _return_formula(cell, s, e),
+        })
+    if path is None:
+        return rows
+    ids, positions = _raw_positions(path)
+    for hid, position in zip(ids, positions):
+        spec_key = _bbg_spec_key(position)
+        if spec_key is None:
+            continue
+        key_fn, fields = BLOOMBERG_SPECS[spec_key]
+        bbgid = key_fn(position)
+        if not bbgid.strip() or bbgid.strip().split()[0] in {"US", "Corp", "Govt", "Equity"}:
+            continue
+        for field, (mnemonic, kind) in fields.items():
+            if position.get(field, "").strip():
+                continue
+            rows.append({
+                "targetFile": "holdings.csv", "recordKey": hid, "fieldName": field,
+                "bbgid": bbgid, "mnemonic": mnemonic,
+                "formulaFactory": lambda cell, m=mnemonic, k=kind: _bloomberg_formula(m, cell, k),
+            })
+    return rows
+
+
+def _holding_input_rows(
+    path: Path | None, bloomberg_keys: set[tuple[str, str]],
+) -> list[dict[str, str]]:
     if path is None:
         return []
     ids, positions = _raw_positions(path)
@@ -302,7 +429,8 @@ def _holding_review_rows(path: Path | None) -> list[dict[str, str]]:
             sensitive = spec.group in SENSITIVE_HOLDING_GROUPS and (
                 value or external in required_external
             )
-            if not value and external not in required_external:
+            bloomberg_field = (hid, external) in bloomberg_keys
+            if not value and external not in required_external and not bloomberg_field:
                 continue
             if value and not sensitive:
                 continue
@@ -315,30 +443,68 @@ def _holding_review_rows(path: Path | None) -> list[dict[str, str]]:
                 gap = "G-010"
             rows.append(_gap_row(
                 f"{gap}:{hid}:{external}", "holdings.csv", hid, external, value,
-                "NEEDS_REVIEW" if value else "MISSING",
+                "MISSING",
                 f"Holding field; requirement: {spec.required} {spec.condition}".strip(),
             ))
     return rows
 
 
-def prepare_review(
+def _reconciliation_input_rows(path: Path | None) -> list[dict[str, str]]:
+    """Create stable control rows; values remain blank until independently supplied."""
+    rows = [{
+        "checkId": "POSITIONS_TO_GL", "category": "POSITION_GL",
+        "actualBasis": "Sum holdings.csv valUSD",
+        "controlValue": "", "tolerance": "", "sourceId": "", "status": "MISSING",
+        "comment": "",
+    }]
+    for field in FLOW_RECON_FIELDS:
+        rows.append({
+            "checkId": f"FLOW:{field}", "category": "FLOW",
+            "actualBasis": f"filing_data.txt {field}",
+            "controlValue": "", "tolerance": "", "sourceId": "", "status": "MISSING",
+            "comment": "",
+        })
+    if path and path.is_file():
+        _ids, positions = _raw_positions(path)
+        if any(row.get("derivCat", "") for row in positions):
+            rows.extend((
+                {
+                    "checkId": "DERIVATIVE_MARKET_VALUE", "category": "DERIVATIVE",
+                    "actualBasis": "Sum holdings.csv valUSD where derivCat is populated",
+                    "controlValue": "", "tolerance": "", "sourceId": "", "status": "MISSING",
+                    "comment": "",
+                },
+                {
+                    "checkId": "DERIVATIVE_UNREALIZED", "category": "DERIVATIVE",
+                    "actualBasis": "Sum holdings.csv unrealizedAppr where derivCat is populated",
+                    "controlValue": "", "tolerance": "", "sourceId": "", "status": "MISSING",
+                    "comment": "",
+                },
+            ))
+    return rows
+
+
+def prepare_inputs(
     fund_dir: str | Path, period: str, *, positions: str | Path | None = None,
     orders: str | Path | None = None,
 ) -> Path:
-    """Create or refresh a fund-period review workbook without inventing data."""
+    """Create or refresh the fund-period input workbook without inventing data."""
     base = Path(fund_dir)
     config_path = base / "fund_config.txt"
     config = parse_config(config_path)
-    destination = review_path(base, period)
+    existing = input_path(base, period, existing=True)
+    legacy_input = existing.name == LEGACY_REVIEW_FILENAME
+    destination = input_path(base, period)
     destination.parent.mkdir(parents=True, exist_ok=True)
 
-    existing_fields = _read_sheet(destination, "FundFields")
-    existing_holding = _read_sheet(destination, "HoldingFields")
-    existing_sources = _read_sheet(destination, "Sources")
-    existing_approvals = _read_sheet(destination, "Approvals")
+    existing_fields = _read_sheet(existing, "FundFields", data_only=False)
+    existing_holding = _read_sheet(existing, "HoldingFields", data_only=False)
+    existing_sources = _read_sheet(existing, "Sources", data_only=False)
+    existing_reconciliation = _read_sheet(existing, "ReconciliationInputs", data_only=False)
 
     position_path = Path(positions).resolve() if positions else None
     order_path = Path(orders).resolve() if orders else None
+    bloomberg_rows = _bloomberg_rows(position_path, base.name, period)
     sources: list[dict[str, str]] = []
     for sid, dataset, stype, path in (
         ("POSITIONS", "internal_positions", "INDEPENDENT_POSITIONS", position_path),
@@ -354,9 +520,16 @@ def prepare_review(
         sources.append({
             "sourceId": sid, "dataset": dataset, "sourceType": stype,
             "sourceSystem": "", "sourcePath": str(path), "sourceAsOf": "",
-            "acquiredAt": "", "sha256": _hash(path) if path.is_file() else "",
-            "recordCount": record_count, "preparedBy": "", "reviewedBy": "",
-            "reviewedAt": "", "status": "PENDING", "comment": "",
+            "sha256": _hash(path) if path.is_file() else "",
+            "recordCount": record_count, "comment": "",
+        })
+    if bloomberg_rows:
+        sources.append({
+            "sourceId": "BLOOMBERG", "dataset": "internal_bloomberg_reference",
+            "sourceType": "BLOOMBERG_TERMINAL", "sourceSystem": "Bloomberg Excel Add-In",
+            "sourcePath": "bloomberg://desktop", "sourceAsOf": report_date_for_period(period).isoformat(),
+            "sha256": "", "recordCount": str(len(bloomberg_rows)),
+            "comment": "Workbook formulas must be opened, calculated, and saved on a Bloomberg terminal.",
         })
     sources = _merge_preserved(sources, existing_sources, lambda row: row.get("sourceId", ""))
     for source in sources:
@@ -368,8 +541,8 @@ def prepare_review(
         if not recorded_hash:
             source["sha256"] = actual_hash
         elif recorded_hash != actual_hash:
-            source["status"] = "PENDING"
-            source["comment"] = "File changed after it was recorded; update evidence and re-review."
+            source["sha256"] = actual_hash
+            source["comment"] = "File changed; confirm the new input before building."
         if not source.get("recordCount", "") and source_path.suffix.lower() in {".csv", ".tsv"}:
             delimiter = "\t" if source_path.suffix.lower() == ".tsv" else ","
             with open(source_path, newline="", encoding="utf-8-sig") as handle:
@@ -383,35 +556,55 @@ def prepare_review(
             if field in flows and not field.endswith("Reinvestment"):
                 row["currentValue"] = flows[field]
                 row["sourceId"] = "ORDERS"
-                row["status"] = "NEEDS_REVIEW"
-                row["comment"] = "Calculated from accepted independent create/redeem orders; review required."
-    fund_rows = _merge_preserved(generated_fund_rows, existing_fields, _field_key)
-    holding_rows = _merge_preserved(
-        _holding_review_rows(position_path), existing_holding, _field_key,
+                row["status"] = "PROVIDED"
+                row["comment"] = "Calculated from the supplied independent create/redeem orders."
+    fund_rows = _merge_preserved(
+        generated_fund_rows, existing_fields, _field_key, legacy=legacy_input,
     )
-    approvals = _merge_preserved([
-        {"role": "PREPARER", "name": "", "approvedAt": "", "status": "PENDING", "comment": ""},
-        {"role": "REVIEWER", "name": "", "approvedAt": "", "status": "PENDING", "comment": ""},
-    ], existing_approvals, lambda row: row.get("role", ""))
+    bloomberg_keys = {
+        (row["recordKey"], row["fieldName"])
+        for row in bloomberg_rows if row["targetFile"] == "holdings.csv"
+    }
+    holding_rows = _merge_preserved(
+        _holding_input_rows(position_path, bloomberg_keys), existing_holding, _field_key,
+        legacy=legacy_input,
+    )
+    reconciliation_inputs = _merge_preserved(
+        _reconciliation_input_rows(position_path), existing_reconciliation,
+        lambda row: row.get("checkId", ""), legacy=legacy_input,
+    )
+
+    bloomberg_lookup = {
+        (row["targetFile"], row["recordKey"], row["fieldName"]): index
+        for index, row in enumerate(bloomberg_rows, 2)
+    }
+    for rows in (fund_rows, holding_rows):
+        for row in rows:
+            bbg_row = bloomberg_lookup.get(_field_key(row))
+            if bbg_row and not row.get("proposedValue") and not row.get("sourceId"):
+                value_cell = f"'Bloomberg'!F{bbg_row}"
+                row["proposedValue"] = f"={value_cell}"
+                row["sourceId"] = "BLOOMBERG"
+                row["status"] = f'=IFERROR(IF({value_cell}="","MISSING","PROVIDED"),"MISSING")'
+                row["comment"] = "Bloomberg formula; unresolved or error results remain missing."
 
     wb = Workbook()
     wb.remove(wb.active)
     summary = wb.create_sheet("Summary")
     summary_rows = [
-        ["FUND-PERIOD REVIEW WORKFLOW", ""],
+        ["FUND-PERIOD INPUT WORKFLOW", ""],
         ["Fund", base.name.upper()],
         ["Period", period],
-        ["Current status", "BLOCKED until review-status reports zero blockers"],
+        ["Current status", "NOT READY until the final build reports zero open inputs and validation errors"],
         ["Non-negotiable rule", "Do not use U.S. Bank, EagleSTAR, prepared filings, or values derived from them."],
-        ["1 - Register evidence", "Complete Sources first. Use the real source system, path, cutoff, preparer, and reviewer."],
-        ["2 - Resolve fund fields", "Filter FundFields to MISSING and NEEDS_REVIEW; resolve only from approved independent evidence."],
-        ["3 - Resolve holding fields", "Complete the generated HoldingFields exceptions; do not manually recreate the base position population."],
-        ["4 - Approve", "Two different people complete PREPARER and REVIEWER on Approvals."],
-        ["5 - Check", f"Run: nport review-status {base.name.lower()} {period}"],
-        ["6 - Build", f"After zero blockers: nport build {base.name.lower()} {period} --from-review"],
-        ["Allowed field decisions", "APPROVED, or NOT_APPLICABLE only when supported with source, reviewer, time, and reason."],
-        ["Source helper", "For a manually added source, enter its real path, save, and rerun prepare-review to populate a blank hash/count."],
-        ["Truth limitation", "The workbook records evidence and decisions; it does not prove origin if a person copied and relabelled a prohibited value."],
+        ["1 - Bloomberg", "Open this workbook on a Bloomberg terminal, wait for the Bloomberg sheet to calculate, and save."],
+        ["2 - Sources", "Record the actual independent system, path, and filing cutoff for every non-Bloomberg source used."],
+        ["3 - Filing fields", "Filter FundFields and HoldingFields to MISSING. Enter supported values or factual NOT_APPLICABLE decisions."],
+        ["4 - Reconciliation", "Filter ReconciliationInputs to MISSING. Enter independent controlValue, tolerance, sourceId, status, and comment."],
+        ["5 - Build", f"Run: nport build {base.name.lower()} {period} --from-inputs"],
+        ["Allowed statuses", "PROVIDED, NOT_APPLICABLE, MISSING, SYSTEM_DERIVED, or SYSTEM_CONTROL."],
+        ["Source helper", "For a manually added file, enter its real path. The final build calculates a blank hash/count before validating the source."],
+        ["Truth limitation", "The workbook records sources and values; a local path cannot prove that a person did not relabel prohibited data."],
     ]
     for values in summary_rows:
         summary.append(values)
@@ -428,38 +621,46 @@ def prepare_review(
         for cell in row_cells:
             cell.alignment = Alignment(vertical="top", wrap_text=True)
     summary.auto_filter.ref = summary.dimensions
+    bloomberg_ws = wb.create_sheet("Bloomberg")
+    _write_table(
+        bloomberg_ws, BLOOMBERG_HEADERS, bloomberg_rows,
+    )
+    for row_number, row in enumerate(bloomberg_rows, 2):
+        bbgid_cell = f"$D{row_number}"
+        bloomberg_ws.cell(row_number, 6, row["formulaFactory"](bbgid_cell))
+    bloomberg_ws.sheet_properties.pageSetUpPr.fitToPage = True
+
+    source_ws = wb.create_sheet("Sources")
+    _write_table(
+        source_ws, SOURCE_HEADERS, sources,
+        editable_headers={"sourceId", "dataset", "sourceType", "sourceSystem", "sourcePath", "sourceAsOf", "comment"},
+    )
+
     _write_table(
         wb.create_sheet("GapGuide"),
-        ["gapId", "gap", "requiredFiles", "whereToFix", "requiredAction"],
-        [dict(zip(["gapId", "gap", "requiredFiles", "whereToFix", "requiredAction"], row)) for row in GAP_GUIDE],
+        GAP_GUIDE_HEADERS,
+        [dict(zip(GAP_GUIDE_HEADERS, row)) for row in GAP_GUIDE],
     )
-    field_inputs = {
-        "proposedValue", "sourceId", "sourceAsOf", "status", "reviewer",
-        "reviewedAt", "comment",
-    }
+    field_inputs = {"proposedValue", "sourceId", "status", "comment"}
     fund_ws = wb.create_sheet("FundFields")
     _write_table(fund_ws, FIELD_HEADERS, fund_rows, editable_headers=field_inputs)
     _add_list_validation(
         fund_ws, "status",
-        ["MISSING", "NEEDS_REVIEW", "APPROVED", "NOT_APPLICABLE", "SYSTEM_DERIVED", "SYSTEM_CONTROL"],
+        ["MISSING", "PROVIDED", "NOT_APPLICABLE", "SYSTEM_DERIVED", "SYSTEM_CONTROL"],
     )
     holding_ws = wb.create_sheet("HoldingFields")
     _write_table(holding_ws, FIELD_HEADERS, holding_rows, editable_headers=field_inputs)
     _add_list_validation(
-        holding_ws, "status", ["MISSING", "NEEDS_REVIEW", "APPROVED", "NOT_APPLICABLE"],
+        holding_ws, "status", ["MISSING", "PROVIDED", "NOT_APPLICABLE"],
     )
-    source_ws = wb.create_sheet("Sources")
+    recon_input_ws = wb.create_sheet("ReconciliationInputs")
     _write_table(
-        source_ws, SOURCE_HEADERS, sources,
-        editable_headers=set(SOURCE_HEADERS) - {"sha256"},
+        recon_input_ws, RECON_INPUT_HEADERS, reconciliation_inputs,
+        editable_headers={"controlValue", "tolerance", "sourceId", "status", "comment"},
     )
-    _add_list_validation(source_ws, "status", ["PENDING", "APPROVED", "REJECTED"])
-    approval_ws = wb.create_sheet("Approvals")
-    _write_table(
-        approval_ws, APPROVAL_HEADERS, approvals,
-        editable_headers={"name", "approvedAt", "status", "comment"},
+    _add_list_validation(
+        recon_input_ws, "status", ["MISSING", "PROVIDED", "NOT_APPLICABLE"],
     )
-    _add_list_validation(approval_ws, "status", ["PENDING", "APPROVED", "REJECTED"])
     _write_table(wb.create_sheet("Reconciliation"),
                  ["check", "status", "actual", "expected", "detail"], [])
 
@@ -474,16 +675,42 @@ def prepare_review(
     return destination
 
 
+def prepare_review(
+    fund_dir: str | Path, period: str, *, positions: str | Path | None = None,
+    orders: str | Path | None = None,
+) -> Path:
+    """Compatibility alias for the 0.1.x review-oriented API."""
+    return prepare_inputs(fund_dir, period, positions=positions, orders=orders)
+
+
 def _resolved(row: dict[str, str]) -> str:
     return row.get("proposedValue", "").strip() or row.get("currentValue", "").strip()
 
 
-def _approved(row: dict[str, str]) -> bool:
-    return row.get("status", "").strip().upper() in {"APPROVED", "SYSTEM_DERIVED", "SYSTEM_CONTROL"}
+def _provided(row: dict[str, str]) -> bool:
+    return row.get("status", "").strip().upper() in {
+        "PROVIDED", "APPROVED", "SYSTEM_DERIVED", "SYSTEM_CONTROL",
+    }
 
 
 def _source_map(rows: list[dict[str, str]]) -> dict[str, dict[str, str]]:
     return {row.get("sourceId", ""): row for row in rows if row.get("sourceId")}
+
+
+def _fill_source_controls(sources: list[dict[str, str]]) -> None:
+    """Calculate missing file controls in memory without rewriting the input workbook."""
+    for source in sources:
+        if source.get("sourceType", "").strip().upper() == "BLOOMBERG_TERMINAL":
+            continue
+        path = Path(source.get("sourcePath", ""))
+        if not path.is_file():
+            continue
+        if not source.get("sha256", "").strip():
+            source["sha256"] = _hash(path)
+        if not source.get("recordCount", "").strip() and path.suffix.lower() in {".csv", ".tsv"}:
+            delimiter = "\t" if path.suffix.lower() == ".tsv" else ","
+            with open(path, newline="", encoding="utf-8-sig") as handle:
+                source["recordCount"] = str(max(0, sum(1 for _ in csv.reader(handle, delimiter=delimiter)) - 1))
 
 
 def _block(code: str, technical: str, plain: str) -> Finding:
@@ -497,60 +724,68 @@ def _validate_sources(
     by_id = _source_map(sources)
     ids = [row.get("sourceId", "") for row in sources if row.get("sourceId", "")]
     for sid in sorted({sid for sid in ids if ids.count(sid) > 1}):
-        blockers.append(_block("REVIEW_SOURCE_DUPLICATE", f"sourceId {sid!r} occurs more than once",
-                               f"Source ID {sid!r} is duplicated."))
+        blockers.append(_block(
+            "INPUT_SOURCE_DUPLICATE",
+            f"Sources[sourceId={sid!r}] -> delete or rename duplicate rows so the sourceId is unique",
+            f"Source ID {sid!r} is duplicated.",
+        ))
     expected_as_of = report_date_for_period(period).isoformat()
     for sid in sorted(used):
         source = by_id.get(sid)
         if source is None:
-            blockers.append(_block("REVIEW_SOURCE_MISSING", f"sourceId {sid!r} is absent",
-                                   "A reviewed value has no source row."))
+            blockers.append(_block(
+                "INPUT_SOURCE_MISSING",
+                f"Sources[new row, sourceId={sid!r}] -> complete every required source column",
+                "A supplied value has no matching source row.",
+            ))
             continue
-        if source.get("status", "").upper() != "APPROVED":
-            blockers.append(_block("REVIEW_SOURCE_UNAPPROVED", f"{sid}: status is not APPROVED",
-                                   f"Source {sid!r} has not been approved."))
         values = [source.get(key, "") for key in ("dataset", "sourceType", "sourceSystem", "sourcePath")]
         if _is_prohibited_source(*values):
-            blockers.append(_block("REVIEW_SOURCE_PROHIBITED", f"{sid}: prohibited U.S. Bank/admin source",
-                                   f"Source {sid!r} is comparison-only."))
+            blockers.append(_block(
+                "INPUT_SOURCE_PROHIBITED",
+                f"Sources[sourceId={sid!r}] -> remove this row and replace every dependent field sourceId with an independent source",
+                f"Source {sid!r} is comparison-only and cannot be used.",
+            ))
             continue
-        path = Path(source.get("sourcePath", ""))
-        if not path.is_file():
-            blockers.append(_block("REVIEW_SOURCE_FILE", f"{sid}: {path} does not exist",
-                                   f"Source file for {sid!r} cannot be found."))
-            continue
-        actual = _hash(path)
-        if actual != source.get("sha256", "").lower():
-            blockers.append(_block("REVIEW_SOURCE_HASH", f"{sid}: SHA-256 changed",
-                                   f"Source {sid!r} changed after review."))
-        for key in ("dataset", "sourceType", "sourceSystem", "sourceAsOf", "acquiredAt", "recordCount",
-                    "preparedBy", "reviewedBy", "reviewedAt"):
+        for key in ("dataset", "sourceType", "sourceSystem", "sourceAsOf", "recordCount"):
             if not source.get(key, "").strip():
-                blockers.append(_block("REVIEW_SOURCE_EVIDENCE", f"{sid}: {key} is blank",
-                                       f"Source {sid!r} lacks complete review evidence."))
+                blockers.append(_block(
+                    "INPUT_SOURCE_EVIDENCE",
+                    f"Sources[sourceId={sid!r}].{key} -> enter the actual source value",
+                    f"Source {sid!r} lacks required source details.",
+                ))
+        live_service = source.get("sourceType", "").strip().upper() == "BLOOMBERG_TERMINAL"
+        if not live_service:
+            path = Path(source.get("sourcePath", ""))
+            if not path.is_file():
+                blockers.append(_block(
+                    "INPUT_SOURCE_FILE",
+                    f"Sources[sourceId={sid!r}].sourcePath -> enter the existing independent file path",
+                    f"Source file for {sid!r} cannot be found: {path}.",
+                ))
+                continue
+            actual = _hash(path)
+            if actual != source.get("sha256", "").lower():
+                blockers.append(_block(
+                    "INPUT_SOURCE_HASH",
+                    f"Sources[sourceId={sid!r}].sourcePath -> restore the recorded file or intentionally re-run prepare from the correct independent input",
+                    f"Source {sid!r} changed after it was recorded.",
+                ))
         if source.get("sourceAsOf", "").strip() and source["sourceAsOf"].strip() != expected_as_of:
             blockers.append(_block(
-                "REVIEW_SOURCE_ASOF",
-                f"{sid}: sourceAsOf={source['sourceAsOf']!r}; expected {expected_as_of!r}",
+                "INPUT_SOURCE_ASOF",
+                f"Sources[sourceId={sid!r}].sourceAsOf -> enter {expected_as_of}",
                 f"Source {sid!r} is not aligned to the filing cutoff.",
             ))
-        for key in ("acquiredAt", "reviewedAt"):
-            raw_timestamp = source.get(key, "").strip()
-            if raw_timestamp:
-                try:
-                    datetime.fromisoformat(raw_timestamp.replace("Z", "+00:00"))
-                except ValueError:
-                    blockers.append(_block("REVIEW_SOURCE_TIME", f"{sid}: {key} is not ISO-8601",
-                                           f"Source {sid!r} has an invalid {key} timestamp."))
         try:
             if int(source.get("recordCount", "")) < 0:
                 raise ValueError
         except ValueError:
-            blockers.append(_block("REVIEW_SOURCE_COUNT", f"{sid}: invalid recordCount",
-                                   f"Source {sid!r} needs a non-negative record count."))
-        if source.get("preparedBy", "").strip() and source.get("preparedBy", "").strip() == source.get("reviewedBy", "").strip():
-            blockers.append(_block("REVIEW_SOURCE_SEPARATION", f"{sid}: preparer and reviewer are the same",
-                                   f"Source {sid!r} needs a second-person review."))
+            blockers.append(_block(
+                "INPUT_SOURCE_COUNT",
+                f"Sources[sourceId={sid!r}].recordCount -> enter a non-negative count when build cannot calculate it",
+                f"Source {sid!r} needs a non-negative record count.",
+            ))
     return blockers
 
 
@@ -559,7 +794,7 @@ def _apply_config_rows(config: FundConfig, rows: list[dict[str, str]]) -> FundCo
     for row in rows:
         external = row.get("fieldName", "")
         attr = _CONFIG_KEY_MAP.get(external)
-        if attr and _approved(row):
+        if attr and _provided(row):
             values[attr] = _resolved(row)
     return replace(config, **values)
 
@@ -569,7 +804,7 @@ def _filing_from_rows(rows: list[dict[str, str]], config: FundConfig, ticker: st
     for row in rows:
         external = row.get("fieldName", "")
         attr = _FILING_KEY_MAP.get(external)
-        if attr and _approved(row) and external not in SYSTEM_DERIVED_FILING:
+        if attr and _provided(row) and external not in SYSTEM_DERIVED_FILING:
             values[attr] = _resolved(row)
     context = derive_context_from_config(config, ticker, period, "fund_config.txt")
     return apply_context(FilingData(**values), context)
@@ -581,7 +816,7 @@ def _holding_objects(
     ids, raw = _raw_positions(positions_path)
     overrides = {
         (row.get("recordKey", ""), row.get("fieldName", "")): _resolved(row)
-        for row in rows if _approved(row)
+        for row in rows if _provided(row)
     }
     external_fields = list(_HOLDINGS_KEY_MAP)
     provenance: list[dict[str, str]] = []
@@ -591,41 +826,27 @@ def _holding_objects(
         mapped: dict[str, str] = {}
         for external, attr in _HOLDINGS_KEY_MAP.items():
             value = overrides.get((hid, external), source_row.get(external, ""))
+            if external == "couponKind":
+                value = _normalize_coupon_kind(value)
+            elif external in {"maturityDt", "expDt", "terminationDt"}:
+                value = _normalize_date(value)
             mapped[attr] = value
             review_row = row_by_key.get((hid, external))
             provenance.append({
                 "targetFile": "holdings.csv", "recordKey": hid, "fieldName": external,
                 "value": value, "sourceId": (
-                    review_row.get("sourceId", "") if review_row and _approved(review_row)
+                    review_row.get("sourceId", "") if review_row and _provided(review_row)
                     else default_source
                 ),
-                "method": "HUMAN_REVIEW" if review_row and _approved(review_row) else "SOURCE_FILE",
-                "reviewer": review_row.get("reviewer", "") if review_row else "",
-                "reviewedAt": review_row.get("reviewedAt", "") if review_row else "",
+                "method": (
+                    "BLOOMBERG_FORMULA" if review_row and _provided(review_row)
+                    and review_row.get("sourceId") == "BLOOMBERG"
+                    else "MANUAL_INPUT" if review_row and _provided(review_row)
+                    else "SOURCE_FILE"
+                ),
             })
         holdings.append(Holding(**mapped))
     return holdings, provenance
-
-
-def _approval_blockers(rows: list[dict[str, str]]) -> list[Finding]:
-    blockers = []
-    by_role = {row.get("role", "").upper(): row for row in rows}
-    for role in ("PREPARER", "REVIEWER"):
-        row = by_role.get(role)
-        if not row or row.get("status", "").upper() != "APPROVED" or not row.get("name") or not row.get("approvedAt"):
-            blockers.append(_block("REVIEW_APPROVAL", f"{role} approval is incomplete",
-                                   f"The {role.lower()} approval is missing."))
-        elif row.get("approvedAt"):
-            try:
-                datetime.fromisoformat(row["approvedAt"].replace("Z", "+00:00"))
-            except ValueError:
-                blockers.append(_block("REVIEW_APPROVAL_TIME", f"{role} approvedAt is not ISO-8601",
-                                       f"The {role.lower()} approval time is invalid."))
-    if by_role.get("PREPARER", {}).get("name") and \
-            by_role.get("PREPARER", {}).get("name") == by_role.get("REVIEWER", {}).get("name"):
-        blockers.append(_block("REVIEW_SEPARATION", "preparer and reviewer are the same person",
-                               "A second person must approve the review."))
-    return blockers
 
 
 def _field_blockers(rows: list[dict[str, str]], *, optional: set[str] | None = None) -> list[Finding]:
@@ -639,51 +860,35 @@ def _field_blockers(rows: list[dict[str, str]], *, optional: set[str] | None = N
         if field in optional and not _resolved(row):
             continue
         if status == "NOT_APPLICABLE":
-            if not row.get("sourceId", "") or not row.get("reviewer", "") or \
-                    not row.get("reviewedAt", "") or not row.get("comment", ""):
+            if not row.get("sourceId", "") or not row.get("comment", ""):
                 blockers.append(_block(
-                    "REVIEW_NA_EVIDENCE",
-                    f"{row.get('targetFile')}:{row.get('recordKey')}:{field} has incomplete NOT_APPLICABLE evidence",
-                    f"{field} is marked not applicable but lacks source, reviewer, time, or reason.",
+                    "INPUT_NA_EVIDENCE",
+                    f"{('FundFields' if row.get('targetFile') != 'holdings.csv' else 'HoldingFields')}"
+                    f"[recordKey={row.get('recordKey')!r}, fieldName={field!r}] -> complete sourceId and comment",
+                    f"{field} is marked not applicable but lacks a source or factual reason.",
                 ))
             continue
-        if not _approved(row) or not _resolved(row):
-            blockers.append(_block(row.get("gapId", "REVIEW_FIELD"),
-                                   f"{row.get('targetFile')}:{row.get('recordKey')}:{field} is unresolved",
-                                   f"{field} still needs a supported value or approved disposition."))
-        elif not row.get("sourceId", ""):
-            blockers.append(_block("REVIEW_FIELD_SOURCE", f"{field} has no sourceId",
-                                   f"{field} has a value but no traceable source."))
-        elif not row.get("reviewer", "") or not row.get("reviewedAt", ""):
-            blockers.append(_block("REVIEW_FIELD_REVIEW", f"{field} lacks reviewer/time",
-                                   f"{field} has not been fully reviewed."))
-        elif not row.get("sourceAsOf", ""):
-            blockers.append(_block("REVIEW_FIELD_ASOF", f"{field} lacks sourceAsOf",
-                                   f"{field} has no recorded source cutoff."))
-        else:
-            try:
-                datetime.fromisoformat(row["reviewedAt"].replace("Z", "+00:00"))
-            except ValueError:
-                blockers.append(_block("REVIEW_FIELD_TIME", f"{field} reviewedAt is not ISO-8601",
-                                       f"{field} has an invalid review timestamp."))
-    return blockers
-
-
-def _field_source_consistency(rows: list[dict[str, str]], sources: list[dict[str, str]]) -> list[Finding]:
-    blockers: list[Finding] = []
-    by_id = _source_map(sources)
-    for row in rows:
-        if not (_approved(row) or row.get("status", "").upper() == "NOT_APPLICABLE"):
-            continue
-        sid = row.get("sourceId", "")
-        if not sid:
-            continue
-        source = by_id.get(sid)
-        if source and row.get("sourceAsOf", "").strip() != source.get("sourceAsOf", "").strip():
+        if (row.get("targetFile") == "fund_config.txt" and _provided(row)
+                and not row.get("proposedValue", "").strip()):
             blockers.append(_block(
-                "REVIEW_FIELD_SOURCE_ASOF",
-                f"{row.get('targetFile')}:{row.get('recordKey')}:{row.get('fieldName')} sourceAsOf does not match {sid}",
-                f"{row.get('fieldName')} does not use the same cutoff as source {sid!r}.",
+                "INPUT_CONFIG_VALUE",
+                f"FundFields[targetFile='fund_config.txt', recordKey='FUND', fieldName={field!r}].proposedValue -> enter the independently supported value",
+                f"{field} must be entered from its independent source; the existing config value is reference-only.",
+            ))
+            continue
+        if not _provided(row) or not _resolved(row):
+            sheet = "HoldingFields" if row.get("targetFile") == "holdings.csv" else "FundFields"
+            blockers.append(_block(
+                row.get("gapId", "INPUT_FIELD"),
+                f"{sheet}[recordKey={row.get('recordKey')!r}, fieldName={field!r}] -> complete proposedValue, sourceId, status, and comment when needed",
+                f"{field} is an open input and needs a supported value or not-applicable disposition.",
+            ))
+        elif not row.get("sourceId", ""):
+            sheet = "HoldingFields" if row.get("targetFile") == "holdings.csv" else "FundFields"
+            blockers.append(_block(
+                "INPUT_FIELD_SOURCE",
+                f"{sheet}[recordKey={row.get('recordKey')!r}, fieldName={field!r}].sourceId -> select the supporting Sources.sourceId",
+                f"{field} has a value but no traceable source.",
             ))
     return blockers
 
@@ -692,55 +897,236 @@ def _positions_source(sources: list[dict[str, str]]) -> dict[str, str] | None:
     return next((row for row in sources if row.get("dataset") == "internal_positions"), None)
 
 
-def evaluate_review(fund_dir: str | Path, period: str) -> dict:
-    """Return resolved models, blockers, provenance, and reconciliation without writing."""
+def _strict_decimal(value: str, label: str) -> Decimal:
+    text = str(value or "").replace(",", "").strip()
+    if not text or text.upper() == "N/A":
+        raise ValueError(f"{label} is not numeric")
+    try:
+        return Decimal(text)
+    except InvalidOperation as exc:
+        raise ValueError(f"{label} is not numeric: {value!r}") from exc
+
+
+def _same_source(a: dict[str, str] | None, b: dict[str, str] | None) -> bool:
+    if not a or not b:
+        return False
+    if a.get("sourceId") == b.get("sourceId"):
+        return True
+    path_a = a.get("sourcePath", "").strip().lower()
+    path_b = b.get("sourcePath", "").strip().lower()
+    return bool(path_a and path_b and path_a == path_b)
+
+
+def _evaluate_reconciliation_inputs(
+    rows: list[dict[str, str]], filing: FilingData | None, holdings: list[Holding],
+    fund_rows: list[dict[str, str]],
+    sources: list[dict[str, str]], position_source: dict[str, str] | None,
+) -> tuple[list[dict[str, str]], list[Finding]]:
+    """Calculate G-012 checks from filed values and independent control inputs."""
+    results: list[dict[str, str]] = []
+    findings: list[Finding] = []
+    source_by_id = _source_map(sources)
+    fund_by_field = {row.get("fieldName", ""): row for row in fund_rows}
+
+    for row in rows:
+        check_id = row.get("checkId", "")
+        category = row.get("category", "")
+        location = f"ReconciliationInputs[checkId={check_id!r}]"
+        status = row.get("status", "").strip().upper()
+        if status == "NOT_APPLICABLE":
+            external = check_id.split(":", 1)[1] if check_id.startswith("FLOW:") else ""
+            filing_value = getattr(filing, _FILING_KEY_MAP[external]) if filing and external else ""
+            actual_is_na = str(filing_value).strip().upper() == "N/A"
+            if (category != "FLOW" or not actual_is_na
+                    or not row.get("sourceId", "") or not row.get("comment", "")):
+                findings.append(_block(
+                    "G-012_INPUT", f"{location} -> use NOT_APPLICABLE only when the filed flow is N/A, and complete sourceId/comment",
+                    f"Reconciliation control {check_id} has an unsupported NOT_APPLICABLE disposition.",
+                ))
+            results.append({
+                "check": check_id, "status": "NOT_APPLICABLE", "actual": "",
+                "expected": "", "detail": row.get("comment", ""),
+            })
+            continue
+        required = ("controlValue", "tolerance", "sourceId", "comment")
+        missing = [key for key in required if not row.get(key, "").strip()]
+        if status != "PROVIDED" or missing:
+            findings.append(_block(
+                "G-012_INPUT",
+                f"{location} -> complete controlValue, tolerance, sourceId, comment, and status=PROVIDED",
+                f"Reconciliation control {check_id} is an open input.",
+            ))
+            continue
+        try:
+            control = _strict_decimal(row["controlValue"], f"{check_id}.controlValue")
+            tolerance = _strict_decimal(row["tolerance"], f"{check_id}.tolerance")
+            if tolerance < 0:
+                raise ValueError(f"{check_id}.tolerance must be non-negative")
+        except ValueError as exc:
+            findings.append(_block(
+                "G-012_INPUT", f"{location} -> correct controlValue/tolerance: {exc}",
+                f"Reconciliation control {check_id} contains an invalid number.",
+            ))
+            continue
+
+        control_source = source_by_id.get(row.get("sourceId", ""))
+        actual_values: list[tuple[str, Decimal, dict[str, str] | None]] = []
+        try:
+            if check_id == "POSITIONS_TO_GL":
+                actual_values.append((
+                    "Holdings total to GL control",
+                    sum((_strict_decimal(h.val_usd or "0", "holding.valUSD") for h in holdings), Decimal("0")),
+                    position_source,
+                ))
+            elif check_id.startswith("FLOW:"):
+                external = check_id.split(":", 1)[1]
+                if filing is None:
+                    continue
+                filing_value = getattr(filing, _FILING_KEY_MAP[external])
+                if str(filing_value).strip().upper() == "N/A":
+                    findings.append(_block(
+                        "G-012_INPUT", f"{location} -> set status=NOT_APPLICABLE with sourceId and factual comment",
+                        f"{external} is N/A and its reconciliation row needs the same disposition.",
+                    ))
+                    continue
+                actual_values.append((
+                    f"Filed {external} to independent flow control",
+                    _strict_decimal(filing_value, external),
+                    source_by_id.get(fund_by_field.get(external, {}).get("sourceId", "")),
+                ))
+            elif check_id == "DERIVATIVE_MARKET_VALUE":
+                derivative_values = [h for h in holdings if h.deriv_cat]
+                actual_values.append((
+                    "Derivative market value to independent ledger",
+                    sum((_strict_decimal(h.val_usd or "0", "derivative.valUSD") for h in derivative_values), Decimal("0")),
+                    position_source,
+                ))
+            elif check_id == "DERIVATIVE_UNREALIZED":
+                derivative_values = [h for h in holdings if h.deriv_cat]
+                actual_values.append((
+                    "Derivative unrealized to independent ledger",
+                    sum((_strict_decimal(h.unrealized_appr or "0", "derivative.unrealizedAppr") for h in derivative_values), Decimal("0")),
+                    position_source,
+                ))
+            else:
+                findings.append(_block(
+                    "G-012_INPUT", f"{location} -> remove the unsupported checkId and rerun prepare",
+                    f"Reconciliation control {check_id!r} is not recognized.",
+                ))
+                continue
+        except (KeyError, ValueError) as exc:
+            findings.append(_block(
+                "G-012_INPUT", f"{location} -> correct the upstream filed/holding value: {exc}",
+                f"Reconciliation control {check_id} cannot calculate its filed value.",
+            ))
+            continue
+
+        for label, actual, actual_source in actual_values:
+            if _same_source(actual_source, control_source):
+                findings.append(_block(
+                    "G-012_INDEPENDENCE",
+                    f"{location}.sourceId -> select a control source different from the source that supplied the filed value",
+                    f"{label} is not an independent reconciliation because both sides use the same source.",
+                ))
+                continue
+            difference = actual - control
+            result_status = "PASS" if abs(difference) <= tolerance else "FAIL"
+            results.append({
+                "check": label, "status": result_status, "actual": f"{actual:.2f}",
+                "expected": f"{control:.2f}",
+                "detail": f"difference={difference:.2f}; tolerance={tolerance:.2f}; controlSource={row.get('sourceId', '')}",
+            })
+            if result_status == "FAIL":
+                findings.append(_block(
+                    "G-012_RECON",
+                    f"{location} -> investigate the independent difference; correct the upstream filed input or the control value, then rebuild",
+                    f"{label} exceeds the supplied tolerance.",
+                ))
+    return results, findings
+
+
+def evaluate_inputs(fund_dir: str | Path, period: str) -> dict:
+    """Return resolved models, open items, provenance, and reconciliation without writing."""
     base = Path(fund_dir)
     ticker = base.name.upper()
-    workbook = review_path(base, period)
+    workbook = input_path(base, period, existing=True)
     config = parse_config(base / "fund_config.txt")
-    fund_rows = _read_sheet(workbook, "FundFields")
-    holding_rows = _read_sheet(workbook, "HoldingFields")
-    sources = _read_sheet(workbook, "Sources")
-    approvals = _read_sheet(workbook, "Approvals")
     blockers: list[Finding] = []
     if not workbook.is_file():
-        blockers.append(_block("REVIEW_WORKBOOK", f"{workbook} does not exist",
-                               "The fund-level human-review workbook has not been created."))
+        blockers.append(_block("INPUT_WORKBOOK", f"Run nport prepare to create {workbook}",
+                               "Run nport prepare to create the fund-period input workbook."))
         return {"blockers": blockers}
+    fund_rows = _read_sheet(workbook, "FundFields")
+    holding_rows = _read_sheet(workbook, "HoldingFields")
+    reconciliation_input_rows = _read_sheet(workbook, "ReconciliationInputs")
+    sources = _read_sheet(workbook, "Sources")
+    _fill_source_controls(sources)
 
-    blockers.extend(_approval_blockers(approvals))
-    # Optional/conditional filing sections still need an explicit reviewed
-    # disposition. Only an open-ended policy date and relative-VaR identifiers
-    # that are inapplicable under the approved regime may remain blank.
+    # Optional/conditional filing sections still need an explicit disposition.
+    # Only an open-ended policy date and relative-VaR identifiers that are
+    # inapplicable under the selected regime may remain blank.
     blockers.extend(_field_blockers(
         fund_rows, optional={"policyEffectiveTo", "nameDesignatedIndex", "indexIdentifier"}
     ))
     blockers.extend(_field_blockers(holding_rows, optional={"isin", "ticker"}))
-    blockers.extend(_field_source_consistency(fund_rows + holding_rows, sources))
 
     used_sources = {
-        row.get("sourceId", "") for row in fund_rows + holding_rows
-        if (_approved(row) or row.get("status", "").upper() == "NOT_APPLICABLE")
+        row.get("sourceId", "") for row in fund_rows + holding_rows + reconciliation_input_rows
+        if (_provided(row) or row.get("status", "").upper() == "NOT_APPLICABLE")
         and row.get("sourceId", "")
     }
     position_source = _positions_source(sources)
     if position_source:
         used_sources.add(position_source.get("sourceId", ""))
     else:
-        blockers.append(_block("G-001", "no internal_positions source is present",
+        blockers.append(_block("G-001", f"Run nport prepare {ticker.lower()} {period} --positions <independent.csv>; then complete Sources[sourceId='POSITIONS']",
                                "An independent position population has not been supplied."))
+    if not reconciliation_input_rows:
+        blockers.append(_block(
+            "G-012_INPUT",
+            f"Run nport prepare {ticker.lower()} {period} with the independent positions file to create ReconciliationInputs",
+            "The reconciliation input sheet is missing or empty.",
+        ))
+    elif position_source and Path(position_source.get("sourcePath", "")).is_file():
+        try:
+            expected_ids = {
+                row["checkId"] for row in _reconciliation_input_rows(Path(position_source["sourcePath"]))
+            }
+        except (KeyError, OSError, TypeError, ValueError):
+            expected_ids = set()
+        if expected_ids:
+            actual_ids = [row.get("checkId", "") for row in reconciliation_input_rows]
+            counts = Counter(actual_ids)
+            missing_ids = sorted(expected_ids - set(actual_ids))
+            duplicate_ids = sorted(check_id for check_id, count in counts.items() if check_id and count > 1)
+            if missing_ids or duplicate_ids:
+                detail = []
+                if missing_ids:
+                    detail.append(f"missing checkId(s): {', '.join(missing_ids)}")
+                if duplicate_ids:
+                    detail.append(f"duplicate checkId(s): {', '.join(duplicate_ids)}")
+                blockers.append(_block(
+                    "G-012_INPUT",
+                    f"Run nport prepare {ticker.lower()} {period} again to restore ReconciliationInputs ({'; '.join(detail)})",
+                    "The reconciliation input rows do not match the required checks for this filing.",
+                ))
     blockers.extend(_validate_sources(sources, used_sources, period))
 
     try:
         config = _apply_config_rows(config, fund_rows)
-        approved_datasets = sorted({
-            source.get("dataset", "") for source in sources
-            if source.get("status", "").upper() == "APPROVED" and source.get("dataset", "")
+        source_by_id = _source_map(sources)
+        used_datasets = sorted({
+            source_by_id[sid].get("dataset", "") for sid in used_sources
+            if sid in source_by_id and source_by_id[sid].get("dataset", "")
         })
-        config = replace(config, required_sources=";".join(approved_datasets))
+        config = replace(config, required_sources=";".join(used_datasets))
         filing = _filing_from_rows(fund_rows, config, ticker, period)
     except ValueError as exc:
-        blockers.append(_block("G-004", str(exc), "The approved fund policy is incomplete or invalid."))
+        blockers.append(_block(
+            "G-004",
+            f"FundFields[targetFile='fund_config.txt'] -> correct the policy/config row named by this error: {exc}",
+            "The fund policy is incomplete or invalid.",
+        ))
         filing = None
 
     holdings: list[Holding] = []
@@ -752,57 +1138,72 @@ def evaluate_review(fund_dir: str | Path, period: str) -> dict:
                 position_source.get("sourceId", "POSITIONS"),
             )
         except (OSError, TypeError, ValueError) as exc:
-            blockers.append(_block("G-001", f"position import failed: {exc}",
+            blockers.append(_block("G-001", f"Replace the --positions file referenced by Sources[sourceId='POSITIONS'].sourcePath: {exc}",
                                    "The independent position file is invalid."))
 
     reconciliation: list[dict[str, str]] = []
     if filing and holdings:
         errors, warnings = validate_all(config, filing, holdings)
         for message in errors:
-            blockers.append(_block("INPUT_VALIDATION", message, "A canonical filing value is invalid."))
+            blockers.append(_block(
+                "INPUT_VALIDATION",
+                f"FundFields or HoldingFields -> locate the field named in this validation message and correct its proposedValue/status: {message}",
+                "A supplied canonical filing value is invalid.",
+            ))
         try:
             equation = float(filing.tot_assets) - float(filing.tot_liabs) - float(filing.net_assets)
-            status = "PASS" if abs(equation) <= 1.0 else "BLOCKER"
+            status = "PASS" if abs(equation) <= 1.0 else "FAIL"
             reconciliation.append({
                 "check": "NAV equation", "status": status, "actual": f"{equation:.2f}",
                 "expected": "0.00", "detail": "totAssets - totLiabs - netAssets",
             })
-            if status == "BLOCKER":
-                blockers.append(_block("G-012_NAV", f"NAV equation difference {equation:.2f}",
+            if status == "FAIL":
+                blockers.append(_block("G-012_NAV", "FundFields[fieldName='totAssets'/'totLiabs'/'netAssets'] -> correct the independently supported value(s)",
                                        "Assets, liabilities, and net assets do not reconcile."))
         except ValueError:
             pass
         expected_count = position_source.get("recordCount", "") if position_source else ""
-        count_status = "PASS" if expected_count == str(len(holdings)) else "BLOCKER"
+        count_status = "PASS" if expected_count == str(len(holdings)) else "FAIL"
         reconciliation.append({
             "check": "Position count", "status": count_status, "actual": str(len(holdings)),
             "expected": expected_count, "detail": "Independent positions imported",
         })
-        if count_status == "BLOCKER":
+        if count_status == "FAIL":
             blockers.append(_block("G-012_COUNT",
-                                   f"position count {len(holdings)} does not match source count {expected_count!r}",
+                                   "Replace the --positions file or correct Sources[sourceId='POSITIONS'].recordCount so it matches the actual imported population",
                                    "The imported position population does not match its source control count."))
+        supplied_reconciliation, reconciliation_findings = _evaluate_reconciliation_inputs(
+            reconciliation_input_rows, filing, holdings, fund_rows, sources, position_source,
+        )
+        reconciliation.extend(supplied_reconciliation)
+        blockers.extend(reconciliation_findings)
         for row in fund_rows:
-            if _approved(row) and row.get("fieldName") in _CONFIG_KEY_MAP:
+            if _provided(row) and row.get("fieldName") in _CONFIG_KEY_MAP:
                 provenance.append({
                     "targetFile": "fund_config.txt", "recordKey": "FUND",
                     "fieldName": row.get("fieldName", ""), "value": _resolved(row),
-                    "sourceId": row.get("sourceId", ""), "method": "HUMAN_REVIEW",
-                    "reviewer": row.get("reviewer", ""), "reviewedAt": row.get("reviewedAt", ""),
+                    "sourceId": row.get("sourceId", ""),
+                    "method": "BLOOMBERG_FORMULA" if row.get("sourceId") == "BLOOMBERG" else "MANUAL_INPUT",
                 })
-            elif _approved(row) and row.get("fieldName") in _FILING_KEY_MAP:
+            elif _provided(row) and row.get("fieldName") in _FILING_KEY_MAP:
                 provenance.append({
                     "targetFile": "filing_data.txt", "recordKey": "FUND",
                     "fieldName": row.get("fieldName", ""), "value": _resolved(row),
-                    "sourceId": row.get("sourceId", ""), "method": "HUMAN_REVIEW",
-                    "reviewer": row.get("reviewer", ""), "reviewedAt": row.get("reviewedAt", ""),
+                    "sourceId": row.get("sourceId", ""),
+                    "method": "BLOOMBERG_FORMULA" if row.get("sourceId") == "BLOOMBERG" else "MANUAL_INPUT",
                 })
 
     return {
         "workbook": workbook, "config": config, "filing": filing, "holdings": holdings,
-        "sources": sources, "approvals": approvals, "blockers": blockers,
+        "sources": sources, "usedSources": used_sources, "blockers": blockers,
         "provenance": provenance, "reconciliation": reconciliation,
+        "reconciliationInputs": reconciliation_input_rows,
     }
+
+
+def evaluate_review(fund_dir: str | Path, period: str) -> dict:
+    """Compatibility alias for the 0.1.x review-oriented API."""
+    return evaluate_inputs(fund_dir, period)
 
 
 def _write_kv(path: Path, mapping: dict[str, str]) -> None:
@@ -820,12 +1221,12 @@ def _write_holdings(path: Path, holdings: list[Holding]) -> None:
             writer.writerow({field_to_external[key]: value for key, value in raw.items()})
 
 
-def finalize_review(
+def finalize_inputs(
     fund_dir: str | Path, period: str, *, output_root: str | Path = "data/builds",
     run_id: str | None = None,
 ) -> Path:
-    """Write a clean, versioned canonical bundle only when review has no blockers."""
-    result = evaluate_review(fund_dir, period)
+    """Write a clean, versioned canonical bundle only when inputs are ready."""
+    result = evaluate_inputs(fund_dir, period)
     if result["blockers"]:
         raise ReviewBlocked(result["blockers"])
     ticker = Path(fund_dir).name.upper()
@@ -848,26 +1249,25 @@ def finalize_review(
     _write_holdings(destination / "holdings.csv", result["holdings"])
 
     with open(destination / "source_manifest.csv", "w", newline="", encoding="utf-8") as handle:
-        headers = ["dataset", "source_system", "source_path", "as_of", "acquired_at",
-                   "sha256", "record_count", "approved_by"]
+        headers = ["dataset", "source_type", "source_system", "source_path", "as_of",
+                   "sha256", "record_count"]
         writer = csv.DictWriter(handle, fieldnames=headers)
         writer.writeheader()
         for source in result["sources"]:
-            if source.get("status", "").upper() == "APPROVED":
+            if source.get("sourceId", "") in result["usedSources"]:
                 writer.writerow({
                     "dataset": source.get("dataset", ""),
+                    "source_type": source.get("sourceType", ""),
                     "source_system": source.get("sourceSystem", ""),
                     "source_path": source.get("sourcePath", ""),
                     "as_of": source.get("sourceAsOf", ""),
-                    "acquired_at": source.get("acquiredAt", ""),
                     "sha256": source.get("sha256", ""),
                     "record_count": source.get("recordCount", ""),
-                    "approved_by": source.get("reviewedBy", ""),
                 })
 
     for filename, rows, headers in (
         ("field_provenance.csv", result["provenance"],
-         ["targetFile", "recordKey", "fieldName", "value", "sourceId", "method", "reviewer", "reviewedAt"]),
+         ["targetFile", "recordKey", "fieldName", "value", "sourceId", "method"]),
         ("reconciliation.csv", result["reconciliation"],
          ["check", "status", "actual", "expected", "detail"]),
     ):
@@ -879,19 +1279,27 @@ def finalize_review(
     receipt = {
         "fund": ticker, "period": period, "runId": run_id,
         "createdAt": datetime.now(timezone.utc).isoformat(),
-        "reviewWorkbook": str(result["workbook"]),
-        "reviewWorkbookSha256": _hash(result["workbook"]),
-        "approvals": result["approvals"], "blockers": [],
+        "inputWorkbook": str(result["workbook"]),
+        "inputWorkbookSha256": _hash(result["workbook"]),
+        "blockers": [],
         "outputs": {},
         "originControlLimitation": (
-            "Local hashes and dual review prevent accidental/exact-file reuse; local code "
-            "cannot prove that a person did not manually copy a prohibited value."
+            "Local hashes detect changed files; local code cannot prove that a person did "
+            "not manually copy and relabel a prohibited value."
         ),
     }
     for name in ("fund_config.txt", "filing_data.txt", "holdings.csv",
                  "source_manifest.csv", "field_provenance.csv", "reconciliation.csv"):
         receipt["outputs"][name] = _hash(destination / name)
-    (destination / "review_receipt.json").write_text(
+    (destination / "input_receipt.json").write_text(
         json.dumps(receipt, indent=2) + "\n", encoding="utf-8"
     )
     return destination
+
+
+def finalize_review(
+    fund_dir: str | Path, period: str, *, output_root: str | Path = "data/builds",
+    run_id: str | None = None,
+) -> Path:
+    """Compatibility alias for the 0.1.x review-oriented API."""
+    return finalize_inputs(fund_dir, period, output_root=output_root, run_id=run_id)

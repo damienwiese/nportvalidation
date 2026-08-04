@@ -43,13 +43,12 @@ class Finding:
 @dataclass(frozen=True)
 class SourceEvidence:
     dataset: str
+    source_type: str
     source_system: str
     source_path: str
     as_of: date
-    acquired_at: datetime
     sha256: str
     record_count: int
-    approved_by: str
 
 
 def sha256_file(path: str | Path) -> str:
@@ -62,10 +61,7 @@ def sha256_file(path: str | Path) -> str:
 
 def load_source_manifest(path: str | Path) -> dict[str, SourceEvidence]:
     manifest = Path(path)
-    required = {
-        "dataset", "source_system", "source_path", "as_of", "acquired_at",
-        "sha256", "record_count", "approved_by",
-    }
+    required = {"dataset", "source_system", "source_path", "as_of", "sha256", "record_count"}
     evidence: dict[str, SourceEvidence] = {}
     with open(manifest, newline="", encoding="utf-8-sig") as handle:
         reader = csv.DictReader(handle)
@@ -84,13 +80,12 @@ def load_source_manifest(path: str | Path) -> dict[str, SourceEvidence]:
                 raise ValueError(f"{manifest}:{rownum}: dataset must be unique and non-empty")
             evidence[dataset] = SourceEvidence(
                 dataset=dataset,
+                source_type=row.get("source_type", "FILE").strip() or "FILE",
                 source_system=row["source_system"].strip(),
                 source_path=row["source_path"].strip(),
                 as_of=date.fromisoformat(row["as_of"].strip()),
-                acquired_at=datetime.fromisoformat(row["acquired_at"].strip().replace("Z", "+00:00")),
                 sha256=row["sha256"].strip().lower(),
                 record_count=int(row["record_count"]),
-                approved_by=row["approved_by"].strip(),
             )
     return evidence
 
@@ -184,27 +179,23 @@ def run_preflight(
                 f"Required internal source {dataset!r} was not delivered.",
             ))
             continue
-        source_path = Path(item.source_path)
-        if not source_path.is_file():
-            findings.append(Finding(
-                "EVIDENCE_FILE_MISSING", "BLOCKER", f"{dataset}: {source_path} does not exist.",
-                f"The recorded file for {dataset!r} cannot be found.",
-            ))
-        elif sha256_file(source_path) != item.sha256:
-            findings.append(Finding(
-                "EVIDENCE_HASH", "BLOCKER", f"{dataset}: SHA-256 does not match the manifest.",
-                f"The {dataset!r} file changed after it was recorded.",
-            ))
+        if item.source_type.upper() != "BLOOMBERG_TERMINAL":
+            source_path = Path(item.source_path)
+            if not source_path.is_file():
+                findings.append(Finding(
+                    "EVIDENCE_FILE_MISSING", "BLOCKER", f"{dataset}: {source_path} does not exist.",
+                    f"The recorded file for {dataset!r} cannot be found.",
+                ))
+            elif sha256_file(source_path) != item.sha256:
+                findings.append(Finding(
+                    "EVIDENCE_HASH", "BLOCKER", f"{dataset}: SHA-256 does not match the manifest.",
+                    f"The {dataset!r} file changed after it was recorded.",
+                ))
         if item.as_of != context.report_date:
             findings.append(Finding(
                 "EVIDENCE_ASOF", "BLOCKER",
                 f"{dataset}: as_of={item.as_of}, expected {context.report_date}.",
                 f"The {dataset!r} input is not aligned to the filing date.",
-            ))
-        if not item.approved_by:
-            findings.append(Finding(
-                "EVIDENCE_APPROVAL", "BLOCKER", f"{dataset}: approved_by is empty.",
-                f"The {dataset!r} input has no recorded internal approval.",
             ))
     return findings
 
@@ -229,8 +220,6 @@ def write_release_manifest(
         "created_at": datetime.now(timezone.utc).isoformat(),
         "policy": {
             "registry": str(context.policy.source_ref),
-            "approved_by": context.policy.approved_by,
-            "approved_at": context.policy.approved_at.isoformat(),
             "fiscal_year_end": context.fiscal_year_end.isoformat(),
             "submission_type": context.submission_type,
             "derivatives_regime": context.policy.derivatives_regime,

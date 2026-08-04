@@ -141,22 +141,24 @@ def main(argv: list[str] | None = None) -> None:
     ig.add_argument("--dry-run", action="store_true", help="Transform and validate only, do not write XML")
     ig.add_argument("--registry", default="data/master/fund_registry.csv", help="Approved in-house fund registry")
     ig.add_argument("--source-manifest", default=None, help="Required evidence CSV for independent sources")
-    ig.add_argument("--from-review", action="store_true",
-                    help="Finalize the fund-level human_review.xlsx and build only from that clean package")
+    ig.add_argument("--from-inputs", action="store_true",
+                    help="Validate filing_inputs.xlsx and build only from that clean package")
+    ig.add_argument("--from-review", action="store_true", help=argparse.SUPPRESS)
 
-    pr = sub.add_parser("prepare-review", help="Create/refresh a fund-level human-review workbook")
+    pr = sub.add_parser("prepare", aliases=["prepare-review"],
+                        help="Create/refresh filing_inputs.xlsx, including Bloomberg formulas")
     pr.add_argument("pos", nargs="*", help="<fund> <period>")
     pr.add_argument("--fund-dir", default=None)
     pr.add_argument("--period", default=None)
     pr.add_argument("--positions", default=None, help="Independent canonical positions CSV")
     pr.add_argument("--orders", default=None, help="Independent create/redeem order CSV")
 
-    rs = sub.add_parser("review-status", help="Show every unresolved fund-level review blocker")
+    rs = sub.add_parser("review-status", help=argparse.SUPPRESS)
     rs.add_argument("pos", nargs="*", help="<fund> <period>")
     rs.add_argument("--fund-dir", default=None)
     rs.add_argument("--period", default=None)
 
-    fr = sub.add_parser("finalize-review", help="Write a clean canonical bundle from approved review values")
+    fr = sub.add_parser("finalize-review", help=argparse.SUPPRESS)
     fr.add_argument("pos", nargs="*", help="<fund> <period>")
     fr.add_argument("--fund-dir", default=None)
     fr.add_argument("--period", default=None)
@@ -236,7 +238,8 @@ def main(argv: list[str] | None = None) -> None:
         "merge": _merge,
         "ingest": _ingest,
         "build": _ingest,          # alias
-        "prepare-review": _prepare_review,
+        "prepare": _prepare_inputs,
+        "prepare-review": _prepare_inputs,
         "review-status": _review_status,
         "finalize-review": _finalize_review,
         "schema": _schema,
@@ -371,7 +374,7 @@ def _resolve_review_target(args) -> tuple[Path, str, str]:
         fund_dir = _DEFAULT_FUNDS_DIR / account.lower()
         account = account.upper()
     else:
-        print("ERROR: specify one fund, e.g. `nport prepare-review fdrs 2026-06`.", file=sys.stderr)
+        print("ERROR: specify one fund, e.g. `nport prepare fdrs 2026-06`.", file=sys.stderr)
         sys.exit(1)
     if not (fund_dir / "fund_config.txt").is_file():
         print(f"ERROR: fund_config.txt not found under {fund_dir}.", file=sys.stderr)
@@ -379,60 +382,83 @@ def _resolve_review_target(args) -> tuple[Path, str, str]:
     return fund_dir, account, period
 
 
+def _input_item_label(code: str) -> str:
+    if code == "INPUT_SOURCE_PROHIBITED":
+        return "PROHIBITED INPUT"
+    if code == "INPUT_WORKBOOK":
+        return "SETUP REQUIRED"
+    if code == "G-012_INPUT":
+        return "OPEN INPUT"
+    if code == "G-012_INDEPENDENCE":
+        return "INPUT CORRECTION"
+    if code.startswith("G-012") or code == "INPUT_VALIDATION":
+        return "VALIDATION ERROR"
+    if code.startswith("INPUT_SOURCE") or code.startswith("INPUT_FIELD") or code == "INPUT_CONFIG_VALUE":
+        return "INPUT CORRECTION"
+    if code.startswith("G-"):
+        return "OPEN INPUT"
+    return "OPEN ITEM"
+
+
 def _print_review_blockers(blockers) -> None:
     for finding in blockers:
-        print(f"BLOCKER {finding.code}: {finding.plain}")
-        print(f"  Fix: {finding.technical}")
+        print(f"{_input_item_label(finding.code)} {finding.code}: {finding.plain}")
+        print(f"  Location: {finding.technical}")
 
 
-def _prepare_review(args) -> None:
-    from nport.fund_review import prepare_review
+def _prepare_inputs(args) -> None:
+    from nport.fund_review import prepare_inputs
 
     fund_dir, account, period = _resolve_review_target(args)
+    if args.command == "prepare-review":
+        print("WARNING: prepare-review is deprecated; use `nport prepare`.", file=sys.stderr)
     try:
-        path = prepare_review(
+        path = prepare_inputs(
             fund_dir, period, positions=getattr(args, "positions", None),
             orders=getattr(args, "orders", None),
         )
     except (OSError, ValueError) as exc:
-        print(f"ERROR: review workbook could not be prepared: {exc}", file=sys.stderr)
+        print(f"ERROR: input workbook could not be prepared: {exc}", file=sys.stderr)
         sys.exit(1)
     print(f"Prepared: {path}")
     print(f"Fund/period: {account} {period}")
-    print("Next: complete Sources, FundFields, HoldingFields, and Approvals; then run review-status.")
+    print("Next: open the workbook on a Bloomberg terminal, wait for formulas, save, fill remaining MISSING rows, then run:")
+    print(f"  nport build {account.lower()} {period} --from-inputs")
 
 
 def _review_status(args) -> None:
-    from nport.fund_review import evaluate_review
+    from nport.fund_review import evaluate_inputs
 
+    print("WARNING: review-status is deprecated; `nport build --from-inputs` runs this gate.", file=sys.stderr)
     fund_dir, account, period = _resolve_review_target(args)
     try:
-        result = evaluate_review(fund_dir, period)
+        result = evaluate_inputs(fund_dir, period)
     except (OSError, ValueError) as exc:
-        print(f"ERROR: review could not be evaluated: {exc}", file=sys.stderr)
+        print(f"ERROR: inputs could not be evaluated: {exc}", file=sys.stderr)
         sys.exit(1)
     blockers = result.get("blockers", [])
     if blockers:
-        print(f"{account} {period}: BLOCKED ({len(blockers)} unresolved item(s))")
+        print(f"{account} {period}: NOT READY ({len(blockers)} open input/error item(s))")
         _print_review_blockers(blockers)
         sys.exit(1)
-    print(f"{account} {period}: READY — zero review blockers.")
+    print(f"{account} {period}: READY - zero open inputs or validation errors.")
 
 
 def _finalize_review(args) -> None:
-    from nport.fund_review import ReviewBlocked, finalize_review
+    from nport.fund_review import ReviewBlocked, finalize_inputs
 
+    print("WARNING: finalize-review is deprecated; use `nport build --from-inputs`.", file=sys.stderr)
     fund_dir, account, period = _resolve_review_target(args)
     try:
-        destination = finalize_review(
+        destination = finalize_inputs(
             fund_dir, period, output_root=getattr(args, "output_root", "data/builds")
         )
     except ReviewBlocked as exc:
-        print(f"{account} {period}: NOT FINALIZED ({len(exc.blockers)} blocker(s))", file=sys.stderr)
+        print(f"{account} {period}: NOT FINALIZED ({len(exc.blockers)} open input/error item(s))", file=sys.stderr)
         _print_review_blockers(exc.blockers)
         sys.exit(1)
     except (OSError, ValueError) as exc:
-        print(f"ERROR: review could not be finalized: {exc}", file=sys.stderr)
+        print(f"ERROR: inputs could not be finalized: {exc}", file=sys.stderr)
         sys.exit(1)
     print(f"Finalized clean bundle: {destination}")
 
@@ -862,8 +888,10 @@ def _ingest_one(args) -> None:
         print("ERROR: --custodian is prohibited; U.S. Bank files are comparison-only.",
               file=sys.stderr)
         sys.exit(1)
-    if getattr(args, "from_review", False):
-        _build_from_review(args)
+    if getattr(args, "from_inputs", False) or getattr(args, "from_review", False):
+        if getattr(args, "from_review", False):
+            print("WARNING: --from-review is deprecated; use --from-inputs.", file=sys.stderr)
+        _build_from_inputs(args)
         return
     if not getattr(args, "source_manifest", None):
         print("ERROR: --source-manifest is required; unprovenanced canonical files cannot be built.",
@@ -948,9 +976,9 @@ def _ingest_one(args) -> None:
     )
 
 
-def _build_from_review(args) -> None:
-    """Finalize an approved review package and generate only from that clean bundle."""
-    from nport.fund_review import ReviewBlocked, finalize_review
+def _build_from_inputs(args) -> None:
+    """Validate the input workbook and generate only from its clean bundle."""
+    from nport.fund_review import ReviewBlocked, finalize_inputs
 
     fund_dir, account = _resolve_fund_dir(args.fund_dir, args.account)
 
@@ -976,11 +1004,11 @@ def _build_from_review(args) -> None:
     if args.dry_run:
         with tempfile.TemporaryDirectory() as scratch:
             try:
-                bundle = finalize_review(
+                bundle = finalize_inputs(
                     fund_dir, args.period, output_root=Path(scratch) / "builds"
                 )
             except ReviewBlocked as exc:
-                print(f"{account} {args.period}: BLOCKED ({len(exc.blockers)} item(s))", file=sys.stderr)
+                print(f"{account} {args.period}: NOT READY ({len(exc.blockers)} open input/error item(s))", file=sys.stderr)
                 _print_review_blockers(exc.blockers)
                 sys.exit(1)
             generate_from(bundle, Path(scratch) / f"{account}_{args.period}.xml")
@@ -988,9 +1016,9 @@ def _build_from_review(args) -> None:
         return
 
     try:
-        bundle = finalize_review(fund_dir, args.period)
+        bundle = finalize_inputs(fund_dir, args.period)
     except ReviewBlocked as exc:
-        print(f"{account} {args.period}: BLOCKED ({len(exc.blockers)} item(s))", file=sys.stderr)
+        print(f"{account} {args.period}: NOT READY ({len(exc.blockers)} open input/error item(s))", file=sys.stderr)
         _print_review_blockers(exc.blockers)
         sys.exit(1)
     output = Path(args.output) if args.output else Path("output") / f"{account}_{args.period}.xml"

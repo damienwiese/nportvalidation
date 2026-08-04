@@ -18,22 +18,31 @@ Recommended file templates (use the actual source filename if different):
 - `positions.csv`
 - `accounting_close.csv` or `accounting_close.pdf`
 - `create_redeem_orders.csv` and, when applicable, `reinvestment_support.csv`
-- `fund_policy_approval.pdf` and `fund_static_data.csv`
+- `fund_policy_record.pdf` and `fund_static_data.csv`
 - `swap_trade_export.csv` and `executed_swap_confirmations.pdf`
 - `cash_ledger.csv`, `risk_metrics.csv`, `rule_18f4_results.csv`,
   `var_backtesting.csv`, and `monthly_return_categories.csv`
 - `liquidity_classifications.csv` and, when applicable,
   `liquidity_circumstances.csv`
 - `option_trade_terms.csv` and `option_delta.csv`
-- `positions_to_gl_reconciliation.csv`, `flow_reconciliation.csv`, and
-  `derivatives_reconciliation.csv`
-- `source_origin_attestation.pdf`
+- independent GL, flow, and derivatives control reports used to support the
+  values entered on `ReconciliationInputs`
 
 These are naming conventions, not claims that the files exist. Do not create an
-empty placeholder to clear a blocker; each file must contain genuine independent
+empty placeholder to clear an input; each file must contain genuine independent
 evidence from the named internal owner.
 
-After adding a source path to the fund-period workbook's `Sources` sheet, rerun
-`nport prepare-review <fund> <period> ...` to calculate a blank SHA-256 and CSV
-record count. The operator must still complete the source cutoff, acquisition
-time, preparer, reviewer, review time, and approval.
+Run `nport prepare <fund> <period> --positions <file> [--orders <file>]` once to
+create `filing_inputs.xlsx`. Add each additional real source directly to that
+workbook's `Sources` sheet. Complete `sourceId`, `dataset`, `sourceType`,
+`sourceSystem`, `sourcePath`, `sourceAsOf`, and `comment`; leave `sha256` and
+`recordCount` blank when the program can calculate them from the file.
+
+For G-012, enter the independent control total and approved tolerance in the
+generated `ReconciliationInputs` row, together with its `sourceId`, status, and
+comment. The control source must differ from the source used for the filed-side
+value. The program calculates the filed-side actual, difference, and PASS/FAIL
+result during `nport build <fund> <period> --from-inputs`.
+
+No preparer, reviewer, signature, or approval columns are required by this
+workflow.

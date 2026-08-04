@@ -29,10 +29,10 @@ class FundPolicy:
     cash_b2f_required: bool
     active_from: date
     active_to: date | None
-    approved_by: str
-    approved_at: datetime
-    source_system: str
-    source_ref: str
+    approved_by: str = ""
+    approved_at: datetime | None = None
+    source_system: str = ""
+    source_ref: str = ""
     required_sources: tuple[str, ...] = ()
 
     def is_active(self, report_date: date) -> bool:
@@ -153,7 +153,7 @@ def policy_from_config(config: FundConfig, ticker: str, source_ref: str | Path) 
 
     No business value is inferred. Every policy field required for release must
     be explicitly present in ``fund_config.txt`` and supported by an internal
-    approval reference.
+    source reference.
     """
     missing = [
         name for name, value in (
@@ -162,8 +162,6 @@ def policy_from_config(config: FundConfig, ticker: str, source_ref: str | Path) 
             ("liquidityRequired", config.liquidity_required),
             ("cashB2fRequired", config.cash_b2f_required),
             ("policyEffectiveFrom", config.policy_effective_from),
-            ("policyApprovedBy", config.policy_approved_by),
-            ("policyApprovedAt", config.policy_approved_at),
             ("policySourceRef", config.policy_source_ref),
         ) if not value.strip()
     ]
@@ -190,7 +188,10 @@ def policy_from_config(config: FundConfig, ticker: str, source_ref: str | Path) 
             if config.policy_effective_to.strip() else None
         ),
         approved_by=config.policy_approved_by.strip(),
-        approved_at=_parse_datetime(config.policy_approved_at.strip()),
+        approved_at=(
+            _parse_datetime(config.policy_approved_at.strip())
+            if config.policy_approved_at.strip() else None
+        ),
         source_system="Internal fund configuration",
         source_ref=config.policy_source_ref.strip(),
         required_sources=tuple(

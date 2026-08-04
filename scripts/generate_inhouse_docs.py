@@ -15,7 +15,7 @@ from nport.schema import FIELD_BY_NAME
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
-TODAY = date(2026, 8, 3)
+TODAY = date(2026, 8, 4)
 
 
 CSS = """
@@ -68,9 +68,9 @@ tr { break-inside: avoid; }
 def shell(title: str, subtitle: str, body: str) -> str:
     return f"""<!doctype html><html><head><meta charset="utf-8"><title>{escape(title)}</title>
 <style>{CSS}</style></head><body>
-<section class="cover"><div class="eyebrow">Corgi ETF Trust · N-PORT in-house service</div>
+<section class="cover"><div class="eyebrow">Corgi ETF Trust &middot; N-PORT in-house service</div>
 <h1>{escape(title)}</h1><p class="subtitle">{escape(subtitle)}</p>
-<p class="stamp">As of August 3, 2026 · Source boundary corrected</p>
+<p class="stamp">As of August 4, 2026 &middot; Source-independent workflow</p>
 <div class="callout danger"><b>Controlling rule:</b> no file, value, mapping, or pre-fill delivered by U.S. Bank may populate the in-house filing. Those artifacts are read-only comparison evidence.</div>
 </section>{body}<p class="footer-note">Generated from the repository field contracts and source controls on {TODAY.isoformat()}.</p>
 </body></html>"""
@@ -121,19 +121,19 @@ def effect(field: str, section: str) -> str:
     if field in optional:
         return "Optional or alternative-ID path; review before omission"
     if section != "config" and field.startswith(conditional_prefixes):
-        return "Blocks when the field/section is applicable"
-    return "Blocks when absent, invalid, stale, or unapproved"
+        return "Prevents release when the field/section is applicable"
+    return "Prevents release when absent, invalid, stale, or unsupported"
 
 
 def filing_source(field: str) -> tuple[str, str]:
     if field in {"submissionType", "repPdEnd", "repPdDate", "derivativesRegime"}:
-        return "Approved fund policy in the fund review", "System-derived after the policy rows are approved"
+        return "Current fund policy and static-data record", "System-derived after the policy rows pass validation"
     if field in {"liveTestFlag", "isFinalFiling", "dateSigned"}:
         return "Filing operations / authorized signatory", "FundFields sheet; retain the independent evidence reference"
     if field in {"totAssets", "totLiabs", "netAssets", "assetsAttrMiscSec", "assetsInvested"} or field.startswith("amtPay") or field in {"delayDeliv", "standByCommit", "liquidPref", "isNonCashCollateral"}:
         return "Internal GL, NAV close, and accounting subledgers", "FundFields sheet; enter the supported value and source ID"
     if field.startswith("rtn") or field.startswith("netRealized") or field.startswith("netUnrealized"):
-        return "Internal performance/accounting calculation", "FundFields sheet; reviewer confirms value and cutoff"
+        return "Internal performance/accounting calculation or Bloomberg return series", "FundFields sheet; supply the value and traceable source cutoff"
     if field.startswith("mon"):
         return "Internal create/redeem export reconciled to GL/transfer agent", "FundFields sheet; sales/redemptions can be calculated from --orders"
     if field in {"nameDesignatedIndex", "indexIdentifier"}:
@@ -144,19 +144,19 @@ def filing_source(field: str) -> tuple[str, str]:
         return "Internal cash ledger", "FundFields sheet; value or supported NOT_APPLICABLE disposition"
     if field.startswith("deriv") or field.startswith("median") or field == "backtestingExceptions":
         return "Internal Rule 18f-4 / VaR calculation", "FundFields sheet; value or supported NOT_APPLICABLE disposition"
-    return "Approved internal filing calculation", "FundFields sheet with source, cutoff, reviewer, and time"
+    return "Supported internal filing calculation", "FundFields sheet with value, source ID, status, and factual comment when needed"
 
 
 def holding_source(field: str) -> tuple[str, str]:
     if field in {"name", "title", "cusip", "ticker", "balance", "units", "curCd", "valUSD"}:
-        return "Internal OMS/IBOR position close plus approved security master", "System feed; do not recreate manually"
+        return "Internal OMS/IBOR position close plus independent security master", "System feed; do not recreate manually"
     if field == "pctVal":
-        return "Derived from valUSD / approved netAssets", "System-derived; reconciliation must tie denominator"
+        return "Derived from valUSD / supplied netAssets", "System-derived; reconciliation must tie denominator"
     if field in {"lei", "isin", "invCountry"}:
         sheet = {"lei": "no complete current sheet", "isin": "isin", "invCountry": "invCountry"}[field]
         return "Approved internal security master / licensed reference data", f"Exception review: {sheet} sheet; source evidence required"
     if field in {"assetCat", "issuerCat", "payoffProfile", "fairValLevel", "isRestrictedSec", "isCashCollateral", "isNonCashCollateral", "isLoanByFund"}:
-        return "Internal classification engine plus accounting/risk policy", "System mapping; human reviews exceptions, not bulk population"
+        return "Internal classification engine plus accounting/risk policy", "System mapping; only unresolved exceptions are entered"
     if field.startswith("liquidity"):
         return "Internal liquidity risk program", "HoldingFields sheet; one row per applicable holding field"
     if field in {"maturityDt", "couponKind", "annualizedRt", "isDefault", "areIntrstPmntsInArrs", "isPaidKind"}:
@@ -168,7 +168,7 @@ def holding_source(field: str) -> tuple[str, str]:
     if field in {"delta"}:
         return "Internal risk result or licensed market data at report cutoff", "HoldingFields sheet keyed by holding record"
     if field in {"refIndexName", "refIndexIdentifier"}:
-        return "Internal trade record / approved reference master", "HoldingFields sheet keyed by holding record"
+        return "Internal trade record / independent reference master", "HoldingFields sheet keyed by holding record"
     if field.startswith(("put", "written", "share", "exercise", "exp", "ref", "swap", "termination", "upfront", "pmnt", "rcpt", "notional", "rec", "unrealized", "payoffProfDeriv", "otherDeriv")) or field == "derivCat":
         return "Internal trade records, confirmations, and risk valuation", "HoldingFields sheet keyed by holding record"
     return "Independent internal position/reference source", "HoldingFields sheet when review is required"
@@ -307,7 +307,7 @@ def _exact_holding_legacy(external: str, internal: str, group: str) -> tuple[str
     if external in human_overlay:
         return (
             "Seeded legacy human-review workbook overlay",
-            "master_sheet.py copies the reviewed/seeded workbook value when present; the old workbook lacks mandatory reviewer/time/evidence fields.",
+            "master_sheet.py copies the seeded legacy workbook value when present; that workflow does not establish independent origin.",
         )
     if external in {"upfrontPmnt", "upfrontRcpt"}:
         return (
@@ -353,23 +353,25 @@ def _exact_holding_legacy(external: str, internal: str, group: str) -> tuple[str
 def _new_review_location(kind: str, external: str, internal: str = "") -> str:
     if kind == "config":
         if external == "requiredSources":
-            return "System-derived from APPROVED rows on Sources; the reviewer does not type it."
+            return "System-derived from sourceIds used by PROVIDED or NOT_APPLICABLE rows; the operator does not type it."
+        if external in {"policyApprovedBy", "policyApprovedAt"}:
+            return "Retired compatibility key; the new input workbook does not request or gate on this metadata."
         return (
             f"FundFields: targetFile=fund_config.txt, recordKey=FUND, fieldName={external}. "
-            "Enter proposedValue and cite an approved independent Sources row."
+            "Enter proposedValue, sourceId, and status=PROVIDED."
         )
     if kind == "filing":
         if external in {"submissionType", "repPdEnd", "repPdDate", "derivativesRegime"}:
-            return "SYSTEM_DERIVED after the period and approved fund-policy rows pass review."
+            return "SYSTEM_DERIVED after the period and supplied fund-policy rows pass validation."
         if external == "liveTestFlag":
             return "SYSTEM_CONTROL; remains TEST until all release controls pass."
         return (
             f"FundFields: targetFile=filing_data.txt, recordKey=FUND, fieldName={external}. "
-            "Use APPROVED or a supported NOT_APPLICABLE disposition."
+            "Use PROVIDED or a source-backed NOT_APPLICABLE disposition."
         )
     spec = FIELD_BY_NAME[internal]
     return (
-        f"Base value is positions.csv column {external}. If missing or review-sensitive, use "
+        f"Base value is positions.csv column {external}. If missing or exception-sensitive, use "
         f"HoldingFields: recordKey=<holding>, fieldName={external}. Requirement: "
         f"{spec.required}{' - ' + spec.condition if spec.condition else ''}."
     )
@@ -417,74 +419,74 @@ def trace_rows() -> tuple[list[list[str]], list[list[str]], list[list[str]], lis
 
 
 GAPS = [
-    ["G-001", '<span class="status blocked">DATA BLOCKER</span>', "Independent position population",
+    ["G-001", '<span class="status review">OPEN INPUT</span>', "Independent position population",
      "All Part C holdings, including GPTZ if the fund owns it",
-     code("prepare-review <fund> <period> --positions <independent.csv>") + "; review surfaced rows in HoldingFields.",
-     "Operations", "Approved POSITIONS row, period-end cutoff, hash, row count, and position-count reconciliation"],
-    ["G-002", '<span class="status blocked">DATA BLOCKER</span>', "Independent fund-accounting close",
+     "CLI + Sources + HoldingFields", code("prepare <fund> <period> --positions <independent.csv>") + "; complete Sources[sourceId=POSITIONS]; then resolve HoldingFields[gapId starts G-001].",
+     "Operations", "POSITIONS source row, period-end cutoff, hash, row count, and position-count reconciliation"],
+    ["G-002", '<span class="status review">OPEN INPUT</span>', "Independent fund-accounting close",
      "Assets, liabilities, net assets, balance-sheet items, gains, returns, and cash",
-     "Add the internal close file to Sources; enter supported values in FundFields where targetFile=filing_data.txt.",
-     "Fund Accounting", "Each row cites the approved source; NAV equation passes"],
-    ["G-003", '<span class="status review">PARTLY AUTOMATED</span>', "Create/redeem flows",
+     "Sources + FundFields", "Add Sources[sourceId=&lt;accounting ID&gt;]; fill FundFields[gapId starts G-002] columns proposedValue, sourceId, status, comment.",
+     "Fund Accounting", "Each PROVIDED row cites the independent source; NAV equation passes"],
+    ["G-003", '<span class="status review">PARTLY AUTOMATED INPUT</span>', "Create/redeem flows",
      "mon1/2/3 Sales, Redemption, and Reinvestment",
-     "Pass --orders to prepare-review. Review calculated sales/redemptions in FundFields. Enter reinvestment only from separate internal evidence.",
-     "Capital Markets + Accounting", "Accepted-order calculation, cutoff review, and independent reconciliation"],
-    ["G-004", '<span class="status ok">ENGINEERED</span>', "Fund policy and static data",
+     "CLI + Sources + FundFields", "Pass --orders to prepare; complete Sources[sourceId=ORDERS]; fill only unresolved FundFields[gapId starts G-003].",
+     "Capital Markets + Accounting", "Accepted-order calculation, filing cutoff, and independent reconciliation"],
+    ["G-004", '<span class="status review">OPEN INPUT</span>', "Fund policy and static data",
      "Fiscal year-end, filing type, derivatives regime, applicability, identity, and signer fields",
-     "Use FundFields where targetFile=fund_config.txt. No separate fund_registry.csv is required.",
-     "Compliance / Legal", "Approved value, effective date, approver, timestamp, and internal policy reference"],
+     "Sources + FundFields", "Add the actual policy/static source row; fill FundFields[targetFile=fund_config.txt] proposedValue, sourceId, status, comment. currentValue is reference-only.",
+     "Compliance / Legal", "Supported value, effective date, and internal policy reference"],
     ["G-005", '<span class="status ok">ENGINEERED</span>', "Source manifest",
      "Lineage for every accepted source",
-     "Complete Sources. Finalize-review creates source_manifest.csv automatically.",
-     "Operations", "Path exists; cutoff, hash, count, preparer, reviewer, and approval are complete"],
+     "Sources", "For every used sourceId, complete dataset, sourceType, sourceSystem, sourcePath, sourceAsOf, comment. Build calculates blank file hash/count.",
+     "Operations", "System, path, cutoff, hash, and count are complete"],
     ["G-006", '<span class="status ok">ENGINEERED CONTROL</span>', "Prohibited comparison inputs",
      "U.S. Bank, EagleSTAR, prepared filings, legacy masters, and derived canonical files",
-     "Do not add them to Sources. Known labels and repository landing paths are rejected.",
+     "Sources + supplied paths", "Delete the prohibited Sources row/path and replace each dependent field sourceId with a real independent source. No replacement value is entered from comparison files.",
      "Engineering + Operations", "Prohibited-source check passes; legacy writers remain disabled"],
-    ["G-007", '<span class="status ok">ENGINEERED</span>', "Human-review evidence",
-     "Value/disposition, source, cutoff, reviewer, time, reason, and two-person approval",
-     "Complete FundFields, HoldingFields, Sources, and Approvals in the fund-period workbook.",
-     "Operations", "review-status returns zero blockers; review receipt hashes workbook and outputs"],
-    ["G-008", '<span class="status blocked">DATA BLOCKER IF SWAPS</span>', "Swap economics",
+    ["G-007", '<span class="status ok">ENGINEERED</span>', "Manual input trace",
+     "Value/disposition, source, filing cutoff, and reason",
+     "FundFields + HoldingFields + Sources", "For each PROVIDED row, supply value and sourceId. For each NOT_APPLICABLE row, supply sourceId and factual comment.",
+     "Operations", "Build reports zero open inputs/errors; input receipt hashes workbook and outputs"],
+    ["G-008", '<span class="status review">CONDITIONAL OPEN INPUT</span>', "Swap economics",
      "Counterparty, LEI, notional, value, termination, and receive/pay leg terms",
-     "Use HoldingFields for the swap record. Cite internal trade evidence or an independently retained executed confirmation.",
+     "Sources + HoldingFields", "Add Sources[sourceId=&lt;swap ID&gt;]; fill HoldingFields[gapId starts G-008] for each swap recordKey.",
      "Derivatives Operations", "All required swap fields supported; valuation reconciles"],
-    ["G-009", '<span class="status blocked">DATA BLOCKER IF APPLICABLE</span>', "B.2.f / B.3 / B.5.c / B.9 / B.10",
+    ["G-009", '<span class="status review">CONDITIONAL OPEN INPUT</span>', "B.2.f / B.3 / B.5.c / B.9 / B.10",
      "Cash outside C/D, risk metrics, monthly categories, derivatives exposure, or VaR",
-     "Use FundFields. Enter a supported value or NOT_APPLICABLE with source, reviewer, time, and reason.",
+     "Sources + FundFields", "Add the actual accounting/risk Sources row; fill FundFields[gapId starts G-009] with PROVIDED or source-backed NOT_APPLICABLE.",
      "Accounting + Risk", "Fund policy determines applicability; preflight enforces applicable sections"],
-    ["G-010", '<span class="status blocked">DATA BLOCKER IF APPLICABLE</span>', "C.7 liquidity",
+    ["G-010", '<span class="status review">CONDITIONAL OPEN INPUT</span>', "C.7 liquidity",
      "liquidityClassificationJson and liquidityCircumstancesJson by holding",
-     "Use HoldingFields for each surfaced holding and cite internal liquidity-risk evidence.",
-     "Liquidity Risk", "100% applicable holding coverage and approval evidence"],
-    ["G-011", '<span class="status blocked">DATA BLOCKER FOR OPTIONS</span>', "Option terms and delta",
+     "Sources + HoldingFields", "Add Sources[sourceId=&lt;liquidity ID&gt;]; fill HoldingFields[gapId starts G-010] for every applicable recordKey.",
+     "Liquidity Risk", "100% applicable holding coverage and source evidence"],
+    ["G-011", '<span class="status review">CONDITIONAL OPEN INPUT</span>', "Option terms and delta",
      "Delta, exercise terms, expiry, and underlying/reference identity",
-     "Use HoldingFields for the option record and cite internal trade/risk evidence at the cutoff.",
+     "Sources + HoldingFields", "Add Sources[sourceId=&lt;option/risk ID&gt;]; fill HoldingFields[gapId starts G-011] for each option recordKey.",
      "Derivatives Risk", "Required option fields supported and validated"],
-    ["G-012", '<span class="status review">PARTLY ENGINEERED</span>', "Reconciliation",
-     "NAV equation and position count are automated; GL, derivatives, and flow tie-outs still need source reports",
-     "Clear automated results in Reconciliation and attach the other internal control reports in Sources.",
-     "Accounting + Operations", "No automated exception; independent control reports reviewed"],
-    ["G-013", '<span class="status blocked">RESIDUAL CONTROL LIMIT</span>', "Origin assurance",
-     "Local files cannot prove a reviewer did not manually copy and relabel a prohibited value",
-     "Use source-system attestations, hashes, dual review, and the receipt. This remains a governance control without authenticated connectors.",
-     "Operations + Compliance", "Documented origin attestation; no claim that local code can prove origin"],
+    ["G-012", '<span class="status ok">IMPLEMENTED INPUT + VALIDATION</span>', "Independent reconciliation",
+     "Position-to-GL, monthly flows, derivative totals when applicable, NAV equation, and position count",
+     "Sources + ReconciliationInputs", "Add each independent control source on Sources. In every generated ReconciliationInputs row enter controlValue, tolerance, sourceId, status, and comment. The control source must differ from the source supplying the filed-side value.",
+     "Accounting + Operations", "Every generated control is resolved and every build-calculated reconciliation row is PASS"],
+    ["G-013", '<span class="status">OUT OF ACTIVE SCOPE</span>', "Origin assurance",
+     "Local files cannot prove a person did not manually copy and relabel a prohibited value",
+     "No workbook field", "Nothing can be entered to prove origin technically. Use an authenticated connector or explicitly accepted external governance control.",
+     "Operations + Compliance", "Documented independent origin; no claim that local code can prove origin"],
 ]
 
 GAP_FILES = {
     "G-001": ["data/intake/<period>/<fund>/positions.csv", "clean bundle: holdings.csv"],
     "G-002": ["accounting_close.csv or accounting_close.pdf", "clean bundle: filing_data.txt"],
     "G-003": ["create_redeem_orders.csv", "reinvestment_support.csv (if applicable)"],
-    "G-004": ["fund_policy_approval.pdf", "fund_static_data.csv", "clean bundle: fund_config.txt"],
-    "G-005": ["human_review.xlsx", "clean bundle: source_manifest.csv"],
+    "G-004": ["fund_policy_record.pdf", "fund_static_data.csv", "clean bundle: fund_config.txt"],
+    "G-005": ["filing_inputs.xlsx", "clean bundle: source_manifest.csv"],
     "G-006": ["comparison only: data/custodian/*", "data/fund_accounting/*", "data/master/*.xlsx", "legacy data/funds/* files"],
-    "G-007": ["human_review.xlsx", "field_provenance.csv", "review_receipt.json"],
+    "G-007": ["filing_inputs.xlsx", "field_provenance.csv", "input_receipt.json"],
     "G-008": ["swap_trade_export.csv", "executed_swap_confirmations.pdf"],
     "G-009": ["cash_ledger.csv", "risk_metrics.csv", "rule_18f4_results.csv", "var_backtesting.csv", "monthly_return_categories.csv"],
     "G-010": ["liquidity_classifications.csv", "liquidity_circumstances.csv (if applicable)"],
     "G-011": ["option_trade_terms.csv", "option_delta.csv"],
-    "G-012": ["reconciliation.csv", "positions_to_gl_reconciliation.csv", "flow_reconciliation.csv", "derivatives_reconciliation.csv"],
-    "G-013": ["source_origin_attestation.pdf", "review_receipt.json"],
+    "G-012": ["independent reconciliation evidence", "filing_inputs.xlsx: ReconciliationInputs", "clean bundle: reconciliation.csv"],
+    "G-013": ["actual independent source files", "input_receipt.json"],
 }
 
 
@@ -492,99 +494,101 @@ def gap_files(gap_id: str) -> str:
     return "<br>".join(code(value) for value in GAP_FILES[gap_id])
 
 
-def blocker_tables() -> tuple[str, str]:
+def issue_tables() -> tuple[str, str]:
     files_table = chunked_t(
         ["ID / status", "Gap / affected fields", "Required file templates"],
         [[f"<b>{r[0]}</b><br>{r[1]}", f"<b>{r[2]}</b><br>{r[3]}", gap_files(r[0])] for r in GAPS],
         ["18%", "34%", "48%"], "dense", 4,
     )
     action_table = chunked_t(
-        ["ID", "Exactly where to fix", "Owner", "Proof to close"],
-        [[f"<b>{r[0]}</b>", r[4], f"<b>{r[5]}</b>", r[6]] for r in GAPS],
-        ["10%", "40%", "20%", "30%"], "dense", 4,
+        ["ID", "Sheet / entry point", "Exact action", "Owner", "Completion test"],
+        [[f"<b>{r[0]}</b>", r[4], r[5], f"<b>{r[6]}</b>", r[7]] for r in GAPS],
+        ["8%", "17%", "37%", "16%", "22%"], "dense", 3,
     )
     return files_table, action_table
 
 
 def audit_html() -> str:
-    gap_file_table, gap_action_table = blocker_tables()
-    review_rows = [
+    gap_file_table, gap_action_table = issue_tables()
+    input_rows = [
         ["Summary", "Fund + period", "Nothing", "Scope, stop rule, and next command", "Read-only"],
+        ["Bloomberg", "targetFile + recordKey + fieldName", "Nothing; formulas calculate on terminal", "Returns and supported security/reference fields", "Unresolved formulas remain MISSING"],
         ["GapGuide", "gapId", "Read-only explanation", "All 13 gaps and exact sheet", "Navigation only"],
-        ["FundFields", "targetFile + fieldName", "proposedValue, sourceId, sourceAsOf, status, reviewer, reviewedAt, comment", "Fund config and filing-level values", "APPROVED value or supported NOT_APPLICABLE disposition"],
-        ["HoldingFields", "recordKey + fieldName", "Same review columns", "Debt, derivative, option, swap, and liquidity exceptions", "Generated from the independent positions file"],
-        ["Sources", "sourceId", "System, path, cutoff, hash, count, preparer, reviewer, approval", "Evidence used by reviewed rows", "U.S. Bank/reference sources are rejected"],
-        ["Approvals", "PREPARER / REVIEWER", "Name, approvedAt, status, comment", "Package approval", "Two different people required"],
-        ["Reconciliation", "check", "Status, actual, expected, detail", "NAV equation and position count", "Generated during evaluation/finalization"],
+        ["FundFields", "targetFile + fieldName", "proposedValue, sourceId, status, comment", "Fund config and filing-level values", "PROVIDED or source-backed NOT_APPLICABLE"],
+        ["HoldingFields", "recordKey + fieldName", "Same four input columns", "Holding exceptions", "Generated from independent positions"],
+        ["Sources", "sourceId", "System, path, sourceAsOf, comment", "Evidence used by field rows", "Hashes/counts are calculated; prohibited sources rejected"],
+        ["ReconciliationInputs", "checkId", "controlValue, tolerance, sourceId, status, comment", "Independent GL, flow, and derivative control totals", "Control source must differ from filed-side source"],
+        ["Reconciliation", "check", "Nothing", "Calculated actual, expected, difference, and result", "Generated in the clean bundle; every row must PASS"],
     ]
     body = fr"""
 <h2>1. Final conclusion</h2>
 <div class="callout danger"><b>No June 2026 output is release-eligible.</b> The repository's landed custody, EagleSTAR, prepared N-PORT, master workbooks, and derived per-fund files came from U.S. Bank-delivered material. They may be compared against independently generated output, but they cannot populate it.</div>
 <p>The correct comparison is output-to-output after dates and fund identity are aligned. It is not a source merge. Numerical differences caused only by different report dates are not gaps. A gap is missing coverage, evidence, logic, or reconciliation in the in-house service.</p>
 
-<h2>2. Missing versus blocking</h2>
+<h2>2. Open input versus true blocker</h2>
 {t(["Term", "Meaning", "Example", "Release effect"], [
-    ["Missing", "A required value, dataset, approval, or proof is absent.", "No internal position close exists for 2026-06-30.", "Usually becomes a blocker if applicable."],
-    ["Blocking", "The system must refuse release. The cause may be missing, stale, invalid, unapproved, prohibited, or unreconciled.", "A netAssets value is present but came from U.S. Bank.", "Release must stop."],
-    ["Non-blocking review", "Optional or supported data needs confirmation, but omission is permitted by the filing contract.", "ISIN is absent but a valid CUSIP is filed.", "Review and document; does not automatically stop release."],
+    ["Open input", "A required item has a defined entry or correction path.", "Enter netAssets in FundFields and cite the internal accounting source.", "Filing is NOT READY until supplied; this is not an engineering blocker."],
+    ["Validation error", "An entered value or source fails a deterministic rule.", "The NAV equation fails or sourceAsOf is not period end.", "Correct the named workbook row or upstream file, then rebuild."],
+    ["True blocker", "No implemented input, calculation, or control can resolve the issue.", "A local file path cannot authenticate source-system origin.", "Requires engineering or an accepted external control."],
 ], ["17%", "35%", "31%", "17%"])}
-<div class="callout"><b>Key point:</b> “present” does not mean “usable.” A value from a prohibited source is a blocker even when it is populated.</div>
+<div class="callout"><b>Key point:</b> “present” does not mean “usable.” A prohibited value must be removed and replaced through the named independent input path.</div>
 
 <h2>3. What the code does now</h2>
 {chunked_t(["Control", "Current behavior", "Truth / limitation"], [
     ["Production build", code("nport build") + " reads canonical fund_config.txt, filing_data.txt, and holdings.csv only.", "It no longer calls the U.S. Bank custodian or EagleSTAR parsers."],
-    ["Fund review", code("prepare-review") + " creates one workbook under the fund and period.", "It contains exact locations for every fund field and surfaced holding exception."],
-    ["Evidence gate", code("review-status") + " checks values, dispositions, sources, cutoffs, hashes, counts, timestamps, and approvals.", "Known U.S. Bank/EagleSTAR labels and legacy repository paths are rejected."],
-    ["Clean finalization", code("finalize-review") + " writes a new versioned bundle under data/builds.", "It never overwrites the source workbook or legacy canonical files."],
+    ["Input preparation", code("nport prepare") + " creates filing_inputs.xlsx with Bloomberg formulas and exact gap locations.", "It does not call U.S. Bank or EagleSTAR."],
+    ["Bloomberg population", "The operator opens filing_inputs.xlsx on a Bloomberg terminal and saves resolved formula results.", "Blank or error results remain MISSING."],
+    ["Final build", code("nport build --from-inputs") + " checks sources/fields, finalizes a clean bundle, builds XML, and validates it.", "It prints each open input/error and writes nothing until the filing is ready."],
     ["Legacy/write workflow", "masters, split, mergehumanreview, enrich, merge, new-filing, and the master-specific commands exit with an error.", "They either consume prohibited material or cannot authenticate independent origin."],
     ["Reference comparison", code("nport compare-reference") + " is read-only.", "It reports structural differences and never writes filing inputs."],
-    ["Residual limitation", "Manifest checks use labels, paths, dates, hashes, counts, and approval.", "They cannot prove origin if a prohibited file is deliberately moved and relabelled; authenticated connectors remain required."],
+    ["Residual limitation", "Manifest checks use labels, paths, dates, hashes, and counts.", "They cannot prove origin if a prohibited file is deliberately moved and relabelled; authenticated connectors remain required."],
 ], ["20%", "40%", "40%"], "", 4)}
 
-<h2>4. Complete open-blocker register</h2>
-<p>These are the 13 tracked gaps. Engineering status and data status are separate: a workflow can be implemented while the filing remains blocked because the independent value has not been supplied.</p>
-<p class="small"><b>File-name rule:</b> the names below are expected internal naming templates, not claims that the files currently exist. Use the real source filename when different. An empty placeholder never closes a blocker.</p>
+<h2>4. Complete tracked-item register</h2>
+<p>G-001 through G-012 now have implemented entry, correction, calculation, or validation paths. G-013 is retained only as a disclosed limitation and is outside the active remediation plan, per the operating decision.</p>
+<p class="small"><b>File-name rule:</b> the names below are expected internal naming templates, not claims that the files currently exist. Use the real source filename when different. An empty placeholder never resolves an input.</p>
 {gap_file_table}
 <h3>Exact fix location and proof</h3>
 {gap_action_table}
 
 <h2>5. Where a human enters values</h2>
-<div class="callout good"><b>Implemented location:</b> <code>data/funds/&lt;fund&gt;/filings/&lt;period&gt;/human_review.xlsx</code>. This is the only workbook used by the new review path.</div>
-{chunked_t(["Sheet", "Row key", "Editable values", "Covers", "Release rule"], review_rows, ["15%", "16%", "30%", "19%", "20%"], "dense", 4)}
-<p>The workbook is generated for one fund and one period from the independently supplied positions file. It is a controlled queue: Sources establishes the evidence, FundFields and HoldingFields record decisions, Approvals records two-person sign-off, and Reconciliation records automated results. It is not a source of facts by itself.</p>
+<div class="callout good"><b>Implemented location:</b> <code>data/funds/&lt;fund&gt;/filings/&lt;period&gt;/filing_inputs.xlsx</code>.</div>
+{chunked_t(["Sheet", "Row key", "Editable values", "Covers", "Release rule"], input_rows, ["15%", "16%", "30%", "19%", "20%"], "dense", 4)}
+<p>The workbook is generated for one fund and period from independent positions. Bloomberg formulas populate what Bloomberg supports; Sources records independent origin; FundFields and HoldingFields contain the remaining filing values and dispositions; ReconciliationInputs holds only independently sourced control totals and tolerances.</p>
+<p><b>Fund-configuration safeguard:</b> a displayed <code>currentValue</code> is reference-only. A <code>fund_config.txt</code> row requires an independently supported <code>proposedValue</code>; changing its status alone does not release it.</p>
 <h3>What a human may and may not do</h3>
-<ul><li>May: enter a value supported by an approved independent source.</li><li>May: mark a conditional field NOT_APPLICABLE only with a source, reviewer, timestamp, and reason.</li><li>May not: invent a zero, N/A, policy choice, identifier, term, or classification.</li><li>May not: cite or copy U.S. Bank, EagleSTAR, a prepared filing, or a file derived from them.</li><li>May not: type the base position population into Excel; it must be supplied with <code>--positions</code>.</li></ul>
+<ul><li>May: enter a value supported by an independent source.</li><li>May: mark a conditional field NOT_APPLICABLE only with a source and factual reason.</li><li>May not: invent a zero, N/A, policy choice, identifier, term, or classification.</li><li>May not: cite or copy U.S. Bank, EagleSTAR, a prepared filing, or a file derived from them.</li><li>May not: type the base position population into Excel; it must be supplied with <code>--positions</code>.</li></ul>
 
 <h2>6. Correct operating sequence</h2>
 {chunked_t(["Step", "Actor", "Deterministic action", "Completion condition"], [
     ["1. Intake", "Operations", "Place the actual independent positions file and optional orders file in the fund-period intake folder.", "Real files exist; their origin is independent of U.S. Bank."],
-    ["2. Template", "Operations", code("nport prepare-review <fund> <period> --positions <file> [--orders <file>]"), "The fund-period human_review.xlsx exists."],
-    ["3. Evidence", "Preparer + source owner", "Complete Sources with the actual system, path, cutoff, hash/count, and preparation evidence.", "Every used source row is complete and PENDING or APPROVED."],
-    ["4. Decisions", "Field owners", "Resolve generated FundFields and HoldingFields rows; every accepted decision cites Sources.", "No applicable row is MISSING or NEEDS_REVIEW."],
-    ["5. Approval", "Second reviewer", "Review sources and decisions; complete Approvals separately from the preparer.", "PREPARER and REVIEWER are different and both APPROVED."],
-    ["6. Gate", "Operations", code("nport review-status <fund> <period>"), "Command reports zero blockers."],
-    ["7. Build", "Operations", code("nport build <fund> <period> --from-review"), "Versioned clean bundle and validated XML are written."],
-    ["8. Compare", "Reviewer", "Compare the independent XML with U.S. Bank output on the same fund/date only.", "Differences are documented; comparison data is never merged back."],
+    ["2. Prepare", "Operations", code("nport prepare <fund> <period> --positions <file> [--orders <file>]"), "filing_inputs.xlsx exists."],
+    ["3. Bloomberg", "Operator", "Open filing_inputs.xlsx on a Bloomberg terminal; wait for formulas; save.", "Bloomberg cells contain values or visible errors."],
+    ["4. Complete", "Field owner", "Complete Sources; resolve MISSING FundFields/HoldingFields; complete every generated ReconciliationInputs row.", "No applicable input remains MISSING."],
+    ["5. Build", "Operations", code("nport build <fund> <period> --from-inputs"), "Clean bundle and validated XML are written, or exact open inputs/errors are printed."],
+    ["6. Compare", "Operator", "Optionally compare independent XML with U.S. Bank output on the same fund/date.", "Comparison data is never merged back."],
 ], ["10%", "18%", "45%", "27%"], "dense", 4)}
-<div class="callout"><b>All-fund operation:</b> repeat the sequence independently for every fund. The runbook contains copy/paste PowerShell loops that discover fund folders from <code>data/intake/&lt;period&gt;/</code>, create one workbook per fund, stop on blocked reviews, and build only review-ready funds. FDRS is an example ticker, not a scope limitation.</div>
-<div class="callout"><b>Field coverage:</b> the runbook contains a generated trace for all 170 accepted canonical fields: 30 fund-configuration fields, 56 filing-level fields, and 84 holding fields. It separates the actual current/legacy writer from the new review location.</div>
+<div class="callout"><b>All-fund operation:</b> repeat the sequence independently for every fund. FDRS is an example ticker, not a scope limitation.</div>
+<div class="callout"><b>Field coverage:</b> the runbook contains a generated trace for all 170 accepted canonical fields: 30 fund-configuration fields, 56 filing-level fields, and 84 holding fields. It separates the actual current/legacy writer from the new independent input location.</div>
 
 <h2>7. What remains before release</h2>
-<p>The local review, evidence, merge, provenance, basic reconciliation, and build controls are implemented. What remains is the actual independent fund data and control evidence for each period, plus GL/position, flow, and derivatives reconciliations. Local code also cannot prove that a person did not copy and relabel a prohibited value. Until the applicable data and evidence are supplied, the honest filing status remains <span class="status blocked">BLOCKED</span>.</p>
+<p>The input, Bloomberg formula, source, provenance, reconciliation, and fail-closed build controls are implemented. What remains is operating data: the actual independent fund values, the independent reconciliation control totals, and policy-approved tolerances for each period. The build calculates the filed side, differences, and PASS/FAIL results. No U.S. Bank value may be used to fill an input. Until every applicable input and validation clears, the honest filing status is <span class="status review">NOT READY</span>.</p>
 """
     return shell("Comprehensive Final Audit", "What is prohibited, what is missing, where each gap must be fixed, and what remains before an independently built N-PORT filing can be released.", body)
 
 
 def runbook_html() -> str:
     config_rows, filing_rows, holding_rows, trace_checks = trace_rows()
-    gap_file_table, gap_action_table = blocker_tables()
+    gap_file_table, gap_action_table = issue_tables()
     source_rows = [
         ["Positions", code("internal_positions"), "Part C base rows and values", "Required", "Actual source system is recorded by Operations in Sources"],
         ["Fund accounting", code("internal_fund_accounting"), "B.1/B.2, gains, returns, cash", "Required when fields apply", "Actual GL/NAV source is recorded by Fund Accounting"],
-        ["Create/redeem", code("internal_create_redeem"), "Calculated sales/redemptions only", "Optional input; review still required", "Actual order system is recorded by Capital Markets"],
-        ["Security/reference", code("internal_security_reference"), "Identifiers, country, categories, debt/reference terms", "As applicable", "Actual independent or licensed source is recorded in Sources"],
+        ["Create/redeem", code("internal_create_redeem"), "Calculated sales/redemptions only", "Optional input; unsupported flow categories remain MISSING", "Actual order system is recorded by Capital Markets"],
+        ["Bloomberg", code("internal_bloomberg_reference"), "Returns and supported security/reference fields", "When generated formulas are used", "Generated source row; open, calculate, and save on Bloomberg"],
+        ["Security/reference", code("internal_security_reference"), "Identifiers, country, categories, debt/reference terms not supplied by Bloomberg", "As applicable", "Actual independent or licensed source is recorded in Sources"],
         ["Liquidity", code("internal_liquidity"), "C.7", "Only if policy requires C.7", "Actual liquidity-risk evidence is recorded in Sources"],
         ["Derivatives/risk", code("internal_derivatives"), "C.11 and B.9/B.10", "Only for applicable holdings/regimes", "Actual trade/risk evidence is recorded in Sources"],
+        ["Reconciliation controls", code("internal_reconciliation_control"), "Independent GL, flow, and derivative totals", "Every generated ReconciliationInputs row", "Accounting records the real control report on Sources"],
     ]
     trace_headers = ["Canonical field", "Actual current/legacy origin", "Transform and live code location", "New independent workflow"]
     trace_widths = ["14%", "24%", "30%", "32%"]
@@ -611,113 +615,95 @@ foreach ($fundFolder in Get-ChildItem -LiteralPath $intakeRoot -Directory) {
     if (-not (Test-Path -LiteralPath $positions)) {
         throw "Missing independent positions file for $fund: $positions"
     }
-    $reviewArgs = @("prepare-review", $fund, $period, "--positions", $positions)
+    $prepareArgs = @("prepare", $fund, $period, "--positions", $positions)
     if (Test-Path -LiteralPath $orders) {
-        $reviewArgs += @("--orders", $orders)
+        $prepareArgs += @("--orders", $orders)
     }
-    & $nport @reviewArgs
-    if ($LASTEXITCODE -ne 0) { throw "prepare-review failed for $fund" }
-}''')
-    batch_status = escape(r'''$period = "2026-06"
-$nport = ".\.venv\Scripts\nport.exe"
-$failedFunds = @()
-
-foreach ($book in Get-ChildItem -Path ".\data\funds\*\filings\$period\human_review.xlsx" -File) {
-    $fund = $book.Directory.Parent.Parent.Name.ToLowerInvariant()
-    & $nport review-status $fund $period
-    if ($LASTEXITCODE -ne 0) { $failedFunds += $fund }
-}
-if ($failedFunds.Count -gt 0) {
-    throw "Blocked funds: $($failedFunds -join ', ')"
+    & $nport @prepareArgs
+    if ($LASTEXITCODE -ne 0) { throw "prepare failed for $fund" }
 }''')
     batch_build = escape(r'''$period = "2026-06"
 $nport = ".\.venv\Scripts\nport.exe"
 
-foreach ($book in Get-ChildItem -Path ".\data\funds\*\filings\$period\human_review.xlsx" -File) {
+foreach ($book in Get-ChildItem -Path ".\data\funds\*\filings\$period\filing_inputs.xlsx" -File) {
     $fund = $book.Directory.Parent.Parent.Name.ToLowerInvariant()
-    & $nport build $fund $period --from-review
+    & $nport build $fund $period --from-inputs
     if ($LASTEXITCODE -ne 0) { throw "build failed for $fund" }
 }''')
     body = fr"""
 <h2>1. Purpose and non-negotiable boundary</h2>
 <p>This runbook operates an N-PORT service built from independent sources. U.S. Bank custody exports, EagleSTAR attachments, prepared filings, email attachments, and prior master workbooks are benchmark outputs only. They may never be copied, merged, seeded, or used to clear a production exception.</p>
-<div class="callout danger"><b>Stop rule:</b> if the only available answer comes from U.S. Bank, record the field as missing and keep the filing blocked.</div>
+<div class="callout danger"><b>Stop rule:</b> if the only available answer comes from U.S. Bank, record the field as MISSING and keep the filing NOT READY.</div>
 
 <h2>2. Status language</h2>
 {t(["Status", "Use it when", "Operator action"], [
-    ['<span class="status blocked">MISSING</span>', "The field or evidence does not exist.", "Obtain it from the named independent owner/source."],
-    ['<span class="status blocked">BLOCKED</span>', "Release must stop because an applicable item is missing, invalid, stale, unapproved, prohibited, or unreconciled.", "Do not promote to LIVE."],
-    ['<span class="status review">REVIEW</span>', "A human decision or confirmation is required.", "Enter the value only in the named exception location and attach evidence."],
-    ['<span class="status ok">CLEAR</span>', "Source, cutoff, validation, reconciliation, and approval all pass.", "Retain the evidence and proceed."],
+    ['<span class="status blocked">MISSING</span>', "The field or evidence does not exist, but the workbook shows where to enter it.", "Obtain it from the named independent owner/source and complete that row."],
+    ['<span class="status review">NOT READY</span>', "One or more open inputs or validation errors remain.", "Fix the exact workbook row or upstream file printed by build."],
+    ['<span class="status review">PROVIDED</span>', "A supported current or proposed value is ready for build.", "Keep its sourceId traceable."],
+    ['<span class="status ok">CLEAR</span>', "Source, cutoff, validation, and reconciliation all pass.", "Retain the inputs and proceed."],
 ], ["14%", "43%", "43%"])}
 
 <h2>3. What the source labels mean</h2>
-<div class="callout"><b>Deterministic rule:</b> these are dataset categories, not claims that a system or file exists. The real system name, real path, cutoff, hash, count, preparer, and reviewer are supplied on the Sources sheet for the specific fund and period.</div>
+<div class="callout"><b>Deterministic rule:</b> these are dataset categories, not claims that a system or file exists. The real system name, real path, and filing cutoff are recorded on Sources; the program calculates hashes and counts.</div>
 {chunked_t(["Evidence category", "Dataset value", "Can support", "When required", "Who records the actual source"], source_rows, ["16%", "18%", "24%", "19%", "23%"], "dense", 3)}
 
 <h2>4. Exact operating workflow</h2>
-<div class="callout good"><b>Use this order every time.</b> Do not skip ahead. A command that returns a blocker means stop, correct the named workbook row or source evidence, and rerun that command.</div>
+<div class="callout good"><b>Use this order every time.</b> Do not skip ahead. If build reports an open input or validation error, correct the named workbook row or upstream file and rerun the same command.</div>
 <div class="steps">
 <div class="step"><h3>Step 1 - Check the input format</h3><p><span class="label">Run:</span></p><div class="cmd">Set-Location "C:\Users\damie\nportvalidation"
 &amp; ".\.venv\Scripts\nport.exe" schema</div><p><span class="label">System:</span> Prints the required and conditional <code>positions.csv</code> columns.</p><p><span class="label">Human:</span> Export independent positions to <code>data/intake/&lt;period&gt;/&lt;fund&gt;/positions.csv</code>. If available, place the independent order file beside it as <code>create_redeem_orders.csv</code>.</p><p><span class="label">Stop if:</span> Either file came from or was derived from U.S. Bank or EagleSTAR.</p></div>
-<div class="step"><h3>Step 2 - Create the fund review workbook</h3><p><span class="label">Run:</span></p><div class="cmd">&amp; ".\.venv\Scripts\nport.exe" prepare-review FDRS 2026-06 --positions ".\data\intake\2026-06\fdrs\positions.csv" --orders ".\data\intake\2026-06\fdrs\create_redeem_orders.csv"</div><p><span class="label">System:</span> Creates or refreshes <code>data/funds/fdrs/filings/2026-06/human_review.xlsx</code>. Omit <code>--orders</code> when no independent order export exists.</p><p><span class="label">Human:</span> Confirm the printed fund, period, positions path, and workbook path are correct.</p><p><span class="label">Pass when:</span> The command prints <code>Prepared:</code> and the expected workbook path.</p></div>
-<div class="step"><h3>Step 3 - Register source evidence</h3><p><span class="label">Run:</span> No new command. Open <code>human_review.xlsx</code> and use the <code>Sources</code> sheet.</p><p><span class="label">System:</span> Carries the positions/orders paths, SHA-256, and record counts into the workbook. If a source file changes, its status returns to PENDING.</p><p><span class="label">Human:</span> For every source actually used, complete sourceSystem, sourcePath, sourceAsOf, acquiredAt, preparedBy, reviewedBy, reviewedAt, status, and comment. The reviewer must be a different person.</p><p><span class="label">Pass when:</span> Every cited source is independent, period-aligned, complete, and APPROVED.</p></div>
-<div class="step"><h3>Step 4 - Resolve the field review queue</h3><p><span class="label">Run:</span> No new command. In the workbook, filter <code>FundFields</code> and <code>HoldingFields</code> to MISSING or NEEDS_REVIEW.</p><p><span class="label">System:</span> Shows the exact targetFile, recordKey, fieldName, current value, and gap ID.</p><p><span class="label">Human:</span> Enter proposedValue, sourceId, sourceAsOf, reviewer, reviewedAt, and comment. Use APPROVED for a supported value. Use NOT_APPLICABLE only with evidence and a factual reason. Do not edit SYSTEM_DERIVED or SYSTEM_CONTROL rows.</p><p><span class="label">Pass when:</span> No applicable row remains MISSING or NEEDS_REVIEW.</p></div>
-<div class="step"><h3>Step 5 - Complete two-person approval</h3><p><span class="label">Run:</span> No new command. Use the workbook's <code>Approvals</code> sheet.</p><p><span class="label">Human:</span> One person completes PREPARER; a different person completes REVIEWER. Both enter name, ISO-8601 approvedAt, APPROVED status, and comment.</p><p><span class="label">Pass when:</span> Both approval rows are complete and the names differ.</p></div>
-<div class="step"><h3>Step 6 - Run the blocker gate</h3><p><span class="label">Run:</span></p><div class="cmd">&amp; ".\.venv\Scripts\nport.exe" review-status FDRS 2026-06</div><p><span class="label">System:</span> Prints every unresolved field, source, approval, cutoff, hash, count, or reconciliation issue.</p><p><span class="label">Human:</span> Fix the exact row named after <code>Fix:</code>, save the workbook, and rerun this command.</p><p><span class="label">Pass when:</span> The command prints <code>READY - zero review blockers.</code></p></div>
-<div class="step"><h3>Step 7 - Test without retaining output</h3><p><span class="label">Run:</span></p><div class="cmd">&amp; ".\.venv\Scripts\nport.exe" build FDRS 2026-06 --from-review --dry-run</div><p><span class="label">System:</span> Finalizes in temporary storage, validates canonical data, generates XML, and runs XSD validation.</p><p><span class="label">Human:</span> Read every reported error. Return to the named source or workbook row; never patch generated XML.</p><p><span class="label">Pass when:</span> The command prints <code>DRY RUN PASSED</code>.</p></div>
-<div class="step"><h3>Step 8 - Build, then compare</h3><p><span class="label">Run:</span></p><div class="cmd">&amp; ".\.venv\Scripts\nport.exe" build FDRS 2026-06 --from-review
+<div class="step"><h3>Step 2 - Run the preparation automation</h3><p><span class="label">Run:</span></p><div class="cmd">&amp; ".\.venv\Scripts\nport.exe" prepare FDRS 2026-06 --positions ".\data\intake\2026-06\fdrs\positions.csv" --orders ".\data\intake\2026-06\fdrs\create_redeem_orders.csv"</div><p><span class="label">System:</span> Creates <code>data/funds/fdrs/filings/2026-06/filing_inputs.xlsx</code>, calculates controls for the supplied files, and inserts Bloomberg formulas. Omit <code>--orders</code> when unavailable.</p><p><span class="label">Pass when:</span> The command prints the expected workbook path.</p></div>
+<div class="step"><h3>Step 3 - Open and save on Bloomberg</h3><p><span class="label">Run:</span> Open <code>filing_inputs.xlsx</code> in Excel on a logged-in Bloomberg terminal.</p><p><span class="label">System:</span> The Bloomberg Excel Add-In calculates the visible formulas on the <code>Bloomberg</code> sheet.</p><p><span class="label">Human:</span> Wait until formulas show values or explicit Bloomberg errors, then save and close the workbook.</p><p><span class="label">Pass when:</span> The workbook is saved with calculated values; unresolved Bloomberg errors remain visible and will block.</p></div>
+<div class="step"><h3>Step 4 - Complete the remaining inputs</h3><p><span class="label">Run:</span> Reopen <code>filing_inputs.xlsx</code>.</p><p><span class="label">Human:</span> Complete each real non-Bloomberg source on <code>Sources</code>. Filter <code>FundFields</code> and <code>HoldingFields</code> to MISSING; use PROVIDED with a sourceId, or NOT_APPLICABLE with sourceId and a factual comment. Then filter <code>ReconciliationInputs</code> to MISSING. For every generated check, enter the independent <code>controlValue</code>, policy-approved <code>tolerance</code>, <code>sourceId</code>, <code>status</code>, and comment. The reconciliation source must be different from the source that supplied the filed-side value. Do not type the filed-side actual; build calculates it. Do not edit SYSTEM_DERIVED or SYSTEM_CONTROL. Leave file hash/count blank; build calculates them.</p><p><span class="label">Pass when:</span> No applicable FundFields, HoldingFields, or ReconciliationInputs row remains MISSING.</p></div>
+<div class="step"><h3>Step 5 - Run the final automation</h3><p><span class="label">Run:</span></p><div class="cmd">&amp; ".\.venv\Scripts\nport.exe" build FDRS 2026-06 --from-inputs</div><p><span class="label">System:</span> Checks every field and source, reconciles, writes a clean versioned bundle, generates XML, and runs XSD validation.</p><p><span class="label">Human:</span> If NOT READY, correct the exact workbook row or upstream file printed by the command and rerun the same command.</p><p><span class="label">Pass when:</span> The clean bundle and validated XML are written.</p></div>
+<div class="step"><h3>Step 6 - Optional aligned comparison</h3><p><span class="label">Run:</span></p><div class="cmd">
 &amp; ".\.venv\Scripts\nport.exe" compare-reference --internal ".\output\FDRS_2026-06.xml" --reference "&lt;aligned-reference.xml&gt;"</div><p><span class="label">System:</span> Writes a versioned clean bundle under <code>data/builds/fdrs/2026-06/&lt;run-id&gt;/</code>, writes XML under <code>output/</code>, and performs a read-only comparison.</p><p><span class="label">Human:</span> Confirm the internal and reference outputs use the same fund identity and report date. Document gaps; never copy comparison values back into the filing.</p><p><span class="label">Pass when:</span> The clean bundle, receipt, validated XML, and documented comparison all exist.</p></div>
 </div>
 
 <h3>Run the workflow for every fund</h3>
-<div class="callout"><b>Scope rule:</b> the service is not limited to FDRS. Each fund has its own positions file, review workbook, source evidence, approvals, clean bundle, and XML. Never reuse one fund's workbook or approval for another fund.</div>
-<p><b>Phase A - generate one review workbook per intake folder.</b> The folder name is the fund ticker. The loop requires <code>positions.csv</code> and includes <code>create_redeem_orders.csv</code> only when that file exists.</p>
+<div class="callout"><b>Scope rule:</b> the service is not limited to FDRS. Each fund has its own positions file, input workbook, source evidence, clean bundle, and XML.</div>
+<p><b>Phase A - generate one input workbook per intake folder.</b> The folder name is the fund ticker.</p>
 <div class="cmd">{batch_prepare}</div>
-<p><b>Phase B - pause for human review.</b> Reviewers complete Sources, FundFields, HoldingFields, and Approvals separately for every fund. Do not run the build loop before this work is complete.</p>
-<p><b>Phase C - check every prepared workbook.</b> The loop exits with a list of blocked funds if any review is incomplete.</p>
-<div class="cmd">{batch_status}</div>
-<p><b>Phase D - build every review-ready fund.</b> Run only after Phase C finishes without an error.</p>
+<p><b>Phase B - Bloomberg and remaining inputs.</b> Open, calculate, and save each workbook on Bloomberg; then fill each fund's remaining field rows and ReconciliationInputs control rows.</p>
+<p><b>Phase C - build.</b> The loop stops at the first fund that is not ready.</p>
 <div class="cmd">{batch_build}</div>
 
 <h3>Complete command reference</h3>
 {chunked_t(["Command", "Stage", "What it does", "Writes data?"], [
     [code("nport schema"), "Intake design", "Prints every canonical positions.csv column, type, and applicability rule.", "No"],
-    [code("nport prepare-review <fund> <period> --positions <file> [--orders <file>]"), "Template", "Creates or refreshes the fund-period review workbook and source rows.", "Yes - human_review.xlsx"],
-    [code("nport review-status <fund> <period>"), "Gate", "Lists every unresolved field, evidence, approval, source, and reconciliation blocker.", "No"],
-    [code("nport finalize-review <fund> <period>"), "Finalization", "Writes a versioned clean canonical bundle only when the review has zero blockers.", "Yes - data/builds/..."],
-    [code("nport build <fund> <period> --from-review --dry-run"), "Pre-release test", "Finalizes in temporary storage and validates without retaining a bundle or XML.", "No retained output"],
-    [code("nport build <fund> <period> --from-review"), "Release build", "Finalizes the approved review, generates XML, and runs schema validation.", "Yes - clean bundle and XML"],
+    [code("nport prepare <fund> <period> --positions <file> [--orders <file>]"), "Prepare", "Creates filing_inputs.xlsx, source rows, gap rows, supplied-file controls, and Bloomberg formulas.", "Yes - filing_inputs.xlsx"],
+    [code("nport build <fund> <period> --from-inputs"), "Validate and build", "Prints exact open inputs/errors or writes the clean bundle and schema-valid XML.", "Only when all inputs and validations clear"],
     [code("nport compare-reference --internal <xml> --reference <xml>"), "Post-build comparison", "Performs a read-only structural comparison after dates and fund identity are aligned.", "No filing inputs"],
     [code("nport check-schema"), "Maintenance", "Checks the local N-PORT schema files and version.", "Cache only when applicable"],
     [code("nport pull --ticker <ticker> --list"), "External research", "Lists recent EDGAR N-PORT filings; it is not an input adapter.", "No, unless an explicit output download is requested"],
 ], ["38%", "15%", "33%", "14%"], "dense", 4)}
 <p><b>Disabled write paths:</b> masters, split, mergehumanreview, enrich, merge, new-filing, build-master, split-master, build-filing-master, and split-filing-master. Do not use them for the independent service.</p>
 
-<h2>5. Review workbook template</h2>
+<h2>5. Filing input workbook</h2>
 {chunked_t(["Sheet", "Key", "What the human edits", "Result", "Release rule"], [
     ["Summary", "Fund + period", "Nothing", "Shows scope, stop rule, and next command", "Read-only"],
-    ["GapGuide", "gapId", "Nothing", "Explains all 13 gaps, evidence template, and exact destination", "Read-only"],
-    ["FundFields", "targetFile + fieldName", "proposedValue, sourceId, sourceAsOf, status, reviewer, reviewedAt, comment", "Approved config and filing-level values", "Every required row resolved"],
-    ["HoldingFields", "recordKey + fieldName", "Same seven review columns", "Approved holding exceptions", "Every surfaced required row resolved"],
-    ["Sources", "sourceId", "Actual system/path/cutoff/hash/count plus dual-review evidence", "Generated source manifest", "Every used source approved, independent, and unchanged"],
-    ["Approvals", "role", "Name, approvedAt, status, comment", "Package approval", "Different preparer and reviewer"],
-    ["Reconciliation", "check", "Nothing; correct upstream values/evidence", "NAV equation and position-count results", "Every automated check passes"],
+    ["Bloomberg", "targetFile + recordKey + fieldName", "Nothing; formulas calculate in Excel", "Supported returns and security/reference values", "Blank/error results remain MISSING"],
+    ["GapGuide", "gapId", "Nothing", "Explains every tracked item, evidence template, and exact destination", "Read-only"],
+    ["FundFields", "targetFile + fieldName", "proposedValue, sourceId, status, comment", "Config and filing-level input values", "Every applicable row resolved"],
+    ["HoldingFields", "recordKey + fieldName", "proposedValue, sourceId, status, comment", "Holding exceptions", "Every surfaced applicable row resolved"],
+    ["Sources", "sourceId", "Actual system, path, sourceAsOf, and comment", "Generated source manifest", "Every used source is independent, current, and unchanged"],
+    ["ReconciliationInputs", "checkId", "controlValue, tolerance, sourceId, status, comment", "Independent control side of position-to-GL, flows, and derivative checks", "Every generated row resolved; source differs from filed side"],
+    ["Reconciliation", "check", "Nothing; correct upstream filed input or ReconciliationInputs", "Build-calculated actual, control, difference, tolerance, and result", "Every automated check passes"],
 ], ["15%", "17%", "30%", "23%", "15%"], "dense", 4)}
-<div class="callout danger"><b>The workbook is a controlled exception and approval layer.</b> It does not make unsupported data true. It only accepts a value when the row points to an approved source and the required review evidence is complete.</div>
+<div class="callout danger"><b>The workbook is an input and exception layer.</b> It does not make unsupported data true. A supplied value is usable only when its row points to a complete independent source record.</div>
+<p><b>Fund-configuration safeguard:</b> for <code>targetFile=fund_config.txt</code>, enter <code>proposedValue</code> from the cited independent source. The existing <code>currentValue</code> is reference-only and cannot be accepted by changing status alone.</p>
 
-<h2>6. Status and timestamp rules</h2>
+<h2>6. Status and source rules</h2>
 {chunked_t(["Value", "Exact meaning", "Required evidence"], [
-    ["MISSING", "No usable value has been supplied.", "None yet; remains a blocker when applicable."],
-    ["NEEDS_REVIEW", "A value exists but has not been approved.", "Independent source plus reviewer decision."],
-    ["APPROVED", "The proposed/current value is supported and accepted.", "sourceId, matching sourceAsOf, reviewer, reviewedAt, approved Sources row."],
-    ["NOT_APPLICABLE", "A conditional field does not apply to this fund/holding.", "sourceId, reviewer, reviewedAt, and a factual reason in comment."],
-    ["SYSTEM_DERIVED", "The system calculates the value from approved period/policy inputs.", "No manual override."],
+    ["MISSING", "No usable value has been supplied.", "The row remains an open input when applicable."],
+    ["PROVIDED", "A supported current or proposed value is ready for the build.", "Resolved value, sourceId, and a complete Sources row."],
+    ["NOT_APPLICABLE", "A conditional field does not apply to this fund/holding.", "sourceId plus a factual reason in comment."],
+    ["SYSTEM_DERIVED", "The system calculates the value from validated period/policy inputs.", "No manual override."],
     ["SYSTEM_CONTROL", "The system owns the release-state value.", "No manual override."],
 ], ["20%", "40%", "40%"], "dense", 3)}
-<p>Use ISO-8601, for example <code>2026-08-03T16:30:00-05:00</code>. The example is a format illustration, not an asserted review time.</p>
+<p><code>sourceAsOf</code> is recorded once on the Sources row and must equal the filing period end. No separate sign-off metadata is required.</p>
 
-<h2>7. Current blocker checklist and exact fix location</h2>
+<h2>7. Current input checklist and exact fix location</h2>
 <p class="small"><b>File-name rule:</b> these are expected templates. Use the actual independent source filename; never create an empty placeholder.</p>
 {gap_file_table}
 <h3>Exact fix location and proof</h3>
@@ -729,7 +715,7 @@ foreach ($book in Get-ChildItem -Path ".\data\funds\*\filings\$period\human_revi
 <p class="small">Verification performed: {escape('; '.join(trace_checks))}.</p>
 
 <h2 class="page">9. Exhaustive field trace - fund configuration</h2>
-<p>All {len(config_rows)} accepted fund-configuration fields are listed. <code>requiredSources</code> is derived from approved Sources rows in the new workflow; it is not typed as business data.</p>
+<p>All {len(config_rows)} accepted fund-configuration fields are listed. <code>requiredSources</code> is derived from source IDs used by PROVIDED and NOT_APPLICABLE rows; it is not typed as business data. <code>policyApprovedBy</code> and <code>policyApprovedAt</code> are retained only as compatibility keys and are not requested by the input workbook.</p>
 {chunked_t(trace_headers, config_rows, trace_widths, "dense", 4, "Fund configuration")}
 
 <h2 class="page">10. Exhaustive field trace - filing-level data</h2>
@@ -737,13 +723,13 @@ foreach ($book in Get-ChildItem -Path ".\data\funds\*\filings\$period\human_revi
 {chunked_t(trace_headers, filing_rows, trace_widths, "dense", 4, "Filing-level data")}
 
 <h2 class="page">11. Exhaustive field trace - holdings</h2>
-<p>All {len(holding_rows)} accepted holdings fields are listed and grouped by filing condition. Present base values remain tied to the approved POSITIONS source; missing required and review-sensitive values are surfaced in HoldingFields.</p>
+<p>All {len(holding_rows)} accepted holdings fields are listed and grouped by filing condition. Present base values remain tied to the independent POSITIONS source; missing required and exception-sensitive values are surfaced in HoldingFields.</p>
 {holding_trace}
 
 <div class="keep"><h2>12. Release decision</h2>
-<p>The code may build only after <code>review-status</code> returns zero blockers. That requires applicable fields to be resolved from approved independent sources, source cutoffs to match the report period, source hashes and counts to match, two-person approval to be complete, automated reconciliation to pass, canonical validation to pass, and XSD validation to pass. The local workflow cannot prove that a person did not copy and relabel a prohibited value; origin attestation remains a human governance control.</p></div>
+<p><code>nport build &lt;fund&gt; &lt;period&gt; --from-inputs</code> writes output only after every applicable field and reconciliation control is resolved, control sources are independent of filed-side sources, source cutoffs match the report period, source hashes and counts match, prohibited sources are absent, all reconciliations pass, canonical validation passes, and XSD validation passes. G-013 is outside the active remediation plan; no claim is made that a local file path authenticates origin.</p></div>
 """
-    return shell("N-PORT In-House Runbook", "A field-by-field operating guide showing what supplies each value, exactly where it is entered, how human review works, and what blocks release.", body)
+    return shell("N-PORT In-House Runbook", "A field-by-field operating guide showing what supplies each value, exactly where it is entered, how the input workflow runs, and what blocks release.", body)
 
 
 def main() -> None:
