@@ -213,22 +213,64 @@ def filing_source(name: str) -> tuple[str, str, str]:
 def holding_source(group: str, name: str) -> tuple[str, str, str]:
     if group == "liquidity":
         return ("No current feed", "Policy-conditional typed C.7 field exists; no current writer populates it", "Liquidity Risk must supply and approve the data if the registry marks C.7 applicable")
+    if group == "base":
+        if name in {"name", "title"}:
+            return ("U.S. Bank custodian CSV SecurityName", "custodian.py copies/truncates the received security name", "Operations verifies truncation and name exceptions")
+        if name in {"cusip", "ticker", "balance"}:
+            return ("U.S. Bank custodian CSV", "custodian.py copies the custody identifier or position balance; option ticker is deterministically constructed from custody terms", "Operations verifies exceptions; never invent an identifier or balance")
+        if name in {"lei", "isin", "inv_country"}:
+            return ("Bloomberg formula for supported cash securities; tool/human-review exception route", "master_sheet.py calculates Bloomberg formulas; custodian.py supplies supported derivative/Treasury constants; human review fills residual country/ISIN gaps", "Reviewer saves on Bloomberg and verifies every exception or review-workbook value")
+        if name == "units":
+            return ("Tool classification from the custodian holding type", "custodian.py assigns NS, PA, or NC", "Operations verifies the classified holding type")
+        if name == "cur_cd":
+            return ("Tool constant USD for the current book", "custodian.py writes USD", "Operations confirms the current fund book and contract currency")
+        if name == "val_usd":
+            return ("Custodian market value; EagleSTAR PVal for swaps", "master_sheet.py replaces swap value with EagleSTAR unrealizedAppr", "Fund Accounting verifies cutoff, match coverage, and valuation reconciliation")
+        if name == "pct_val":
+            return ("Derived from valUSD and filed netAssets", "master_sheet.py/custodian.py calculate the filing percentage", "Fund Accounting verifies the denominator and total")
+        if name == "payoff_profile":
+            return ("Derived from custodian position sign or parsed swap direction", "custodian.py assigns Long/Short", "Operations verifies directional exceptions")
+        if name in {"asset_cat", "issuer_cat", "fair_val_level"}:
+            return ("Tool classification from the U.S. Bank custodian position", "custodian.py maps the holding type to N-PORT taxonomy", "Operations verifies exceptional classifications")
+        if name in {"is_restricted_sec", "is_cash_collateral", "is_non_cash_collateral", "is_loan_by_fund"}:
+            return ("Tool constant N in the current adapter", "custodian.py writes N for each generated holding", "Operations must confirm the coded assumption for every applicable holding")
+    if group == "conditional":
+        if name in {"other_desc", "other_value"}:
+            return ("Tool-derived identifier for current options and swaps", "custodian.py writes USER DEFINED plus the deterministic option/swap identifier", "Operations verifies the identifier and exceptional OTHER routes")
+        if name == "issuer_conditional_desc":
+            return ("Tool constant N/A for current swaps; no general OTHER-issuer feed", "custodian.py supplies the current swap value", "Operations documents any non-swap OTHER issuer before release")
+        return ("No current automated writer", "The accepted field remains blank unless a supported upstream value is carried into the master", "Operations must supply evidence when the field becomes applicable; never infer it")
     if group == "swap":
-        if name in {"termination_dt", "notional_amt", "swap_cur_cd", "swap_flag", "ref_cusip"}:
-            return ("U.S. Bank custodian CSV", "custodian.py parses the swap ticker and custody values", "Reviewer verifies parsed economics against the trade record")
-        return ("Human-review workbook swap_legs (TRS-template seed; spread blank)", "master_sheet.py overlays workbook values onto custodian-created swap rows", "Derivatives Operations verifies every seed against the confirm; current workbook does not record reviewer identity")
+        reviewed = {"rec_fixed_or_floating", "rec_desc", "pmnt_floating_rt_index",
+                    "pmnt_floating_rt_spread", "pmnt_rate_tenor", "pmnt_rate_unit"}
+        custodian_terms = {"termination_dt", "notional_amt", "swap_flag", "swap_cur_cd",
+                           "pmnt_fixed_or_floating", "pmnt_pmnt_amt", "pmnt_cur_cd_leg"}
+        builder_fallbacks = {"upfront_pmnt", "pmnt_cur_cd", "upfront_rcpt", "rcpt_cur_cd",
+                             "rec_pmnt_amt", "rec_cur_cd", "rec_reset_dt", "rec_reset_unit",
+                             "pmnt_reset_dt", "pmnt_reset_unit"}
+        if name in reviewed:
+            return ("Human-review workbook swap_legs", "master_sheet.py overlays this exact review column onto the matching fund/swap row", "Derivatives Operations enters the executed-confirm value; the workbook does not accept other swap-leg columns")
+        if name in custodian_terms:
+            return ("U.S. Bank custodian position transformed by custodian.py", "The adapter parses the ticker/market value and assigns the current TRS pay-leg constants", "Derivatives Operations verifies the parsed economics against the executed confirmation")
+        if name in builder_fallbacks:
+            return ("No current input writer; explicit XML-builder fallback", "builder.py uses zero, holding currency, or tenor/unit fallback only when that leg branch is emitted", "Derivatives Operations confirms the fallback is factually correct or supplies a supported upstream value")
+        return ("No current automated or human-review writer", "The field is accepted by config.py but is blank/inapplicable for the current Other-receive/Floating-pay TRS shape", "If the contract shape changes, engineering must add a supported input route before release")
     if group in {"option", "ref_instrument", "other_deriv", "forward"}:
         if name == "delta":
             return ("Manual value preserved in security_master.xlsx", "No automated feed; master_sheet.py preserves the workbook value", "Risk reviewer identifies the source system, as-of date, and approval")
-        if name in {"put_or_call", "written_or_pur", "share_no", "exercise_price", "exercise_price_cur_cd", "exp_dt", "payoff_prof_deriv"}:
+        if name in {"put_or_call", "written_or_pur", "exercise_price", "exp_dt"}:
             return ("U.S. Bank custodian CSV", "custodian.py parses option/derivative terms from the custody position", "Derivatives Operations verifies parsed contract terms")
+        if name in {"share_no", "exercise_price_cur_cd"}:
+            return ("Tool constant derived for current index options", "custodian.py writes N/A share count and USD exercise currency", "Derivatives Operations verifies the contract convention")
+        if name == "ref_inst_type":
+            return ("Tool classification from the custodian derivative", "custodian.py writes indexBasket for options and otherRefInst for swaps", "Derivatives Operations verifies the reference-instrument type")
         if name in {"ref_index_name", "ref_index_identifier"}:
             return ("Human-review workbook option_index sheet (legacy-map seed)", "master_sheet.py applies the workbook reference-index mapping", "Reviewer verifies the seed from evidence; current workbook does not record reviewer identity")
         if name in {"ref_issuer_name", "ref_issue_title", "ref_isin", "ref_ticker"}:
-            return ("Bloomberg formula in security_master.xlsx", "master_sheet.py BDP formulas enrich the reference security", "Reviewer saves on Bloomberg terminal and verifies the result")
+            return ("Bloomberg formula for the reference security; custodian SecurityName seeds swap issuer/title", "master_sheet.py applies BDP enrichment where supported", "Reviewer saves on Bloomberg and verifies the result or supported fallback")
         if name == "ref_cusip":
             return ("U.S. Bank custodian CSV", "custodian.py parses/copies the reference CUSIP", "Reviewer verifies the reference instrument")
-        return ("Current workbook field; no verified automated writer for this condition", "Mapped by master_sheet.py when present", "Derivatives Operations documents the evidence or leaves it inapplicable")
+        return ("No current automated or human-review writer", "The accepted field is carried only when already present in the current master/per-fund input", "Engineering must add a supported source route before this field becomes applicable")
     if group == "deriv_common":
         if name == "unrealized_appr":
             return ("Gmail export - U.S. Bank EagleSTAR PVal attachment", "eaglestar.py matches Primary Asset ID; custodian.py uses it as derivative value", "Fund Accounting verifies the 2026-06-24 PVal cutoff and match coverage")
@@ -239,17 +281,7 @@ def holding_source(group: str, name: str) -> tuple[str, str, str]:
         if name in {"maturity_dt", "coupon_kind", "annualized_rt"}:
             return ("Bloomberg formula in security_master.xlsx", "master_sheet.py BDP formulas populate C.9 terms", "Reviewer saves on Bloomberg terminal and verifies terms")
         return ("Tool constant in custodian.py", "Current code writes N for default/arrears/paid-in-kind flags", "Human reviewer must confirm the coded assumption is true for every applicable debt position")
-    if name in {"inv_country", "isin", "ticker", "lei", "cusip", "asset_cat", "issuer_cat"}:
-        if name in {"inv_country", "isin", "lei"}:
-            return ("Bloomberg formula in security_master.xlsx", "master_sheet.py BDP formulas enrich the custody row", "Reviewer saves on Bloomberg terminal and verifies exceptions")
-        if name in {"ticker", "cusip"}:
-            return ("U.S. Bank custodian CSV", "custodian.py copies the custody identifier", "Reviewer verifies exceptions; never invent an identifier")
-        return ("Tool classification from U.S. Bank custodian position", "custodian.py maps the holding type to N-PORT taxonomy", "Reviewer verifies exceptional classifications")
-    if name in {"balance", "units", "cur_cd", "val_usd", "pct_val", "exchange_rt"}:
-        if name == "pct_val":
-            return ("Derived from valUSD and filed netAssets", "custodian.py recalculates after EagleSTAR overrides", "Fund Accounting verifies the denominator and total")
-        return ("U.S. Bank custodian CSV", "custodian.py transforms the custody position; swap valUSD is later replaced by EagleSTAR PVal", "Operations verifies the 2026-06-25 cutoff and position reconciliation")
-    return ("U.S. Bank custodian CSV or tool constant, as identified by custodian.py", "Custodian transform plus input validation", "Operations reviews the coded mapping and exceptions")
+    return ("No current verified writer", "The field is accepted by config.py and emitted only when populated", "The assigned owner must establish a supported source before use; never infer it")
 
 
 def applicable(row: dict[str, str], name: str, group: str, required: str, condition: str) -> bool:
