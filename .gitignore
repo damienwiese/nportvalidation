@@ -2,20 +2,18 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.ruff_cache/
 *.egg-info/
 dist/
 build/
 .DS_Store
 .claude/
 output/
+archive/cleanup-20260904/local-artifacts/
+tmp/
+data/builds/
+data/inputs/**/_normalized/
+data/funds/*/filings/*/filing_inputs.xlsx
 
 # Excel lock files
 ~$*
-
-# EagleSTAR fund-accounting: build cache + dropped client archives (never committed)
-data/fund_accounting/.cache/
-data/fund_accounting/*.zip
-data/fund_accounting/*.mbox
-
-# Dropped exports/downloads landing in the repo root (never committed)
-/*.zip

@@ -11,7 +11,7 @@ from nport.models import FilingData, FundConfig, Holding
 _ROOT = Path(__file__).resolve().parent.parent
 
 
-_FDRS_DIR = _ROOT / "data" / "funds" / "fdrs"
+_FDRS_DIR = _ROOT / "tests" / "fixtures" / "fdrs"
 
 
 @pytest.fixture(scope="session")
@@ -25,11 +25,6 @@ def schema_dir():
 
 
 @pytest.fixture(scope="session")
-def reference_xml():
-    return _ROOT / "reference_nport.xml"
-
-
-@pytest.fixture(scope="session")
 def sample_data(fdrs_dir):
     """Parsed FDRS Dec 2025 inputs."""
     return (
@@ -37,11 +32,6 @@ def sample_data(fdrs_dir):
         parse_filing(fdrs_dir / "filings" / "2025-12" / "filing_data.txt"),
         parse_holdings(fdrs_dir / "filings" / "2025-12" / "holdings.csv"),
     )
-
-
-@pytest.fixture(scope="session")
-def funds_dir():
-    return _ROOT / "data" / "funds"
 
 
 # ── Fixture helpers for multi-type fund tests ─────────────
@@ -127,7 +117,7 @@ def _option_holding(**overrides):
         title="SPX Call 4800 Dec26", cusip="N/A",
         isin="", ticker="",
         balance="50", units="NC", cur_cd="USD",
-        val_usd="7500000.00", pct_val="30.00", payoff_profile="Long",
+        val_usd="7500000.00", pct_val="30.00", payoff_profile="N/A",
         asset_cat="DE", issuer_cat="CORP", inv_country="US",
         is_restricted_sec="N", fair_val_level="2",
         is_cash_collateral="N", is_non_cash_collateral="N",
@@ -161,7 +151,7 @@ def _swap_holding(**overrides):
         title="S&P 500 Total Return Swap JPM", cusip="N/A",
         isin="", ticker="",
         balance="50000000", units="NC", cur_cd="USD",
-        val_usd="500000.00", pct_val="0.67", payoff_profile="Long",
+        val_usd="500000.00", pct_val="0.67", payoff_profile="N/A",
         asset_cat="DE", issuer_cat="CORP", inv_country="US",
         is_restricted_sec="N", fair_val_level="2",
         is_cash_collateral="N", is_non_cash_collateral="N",
@@ -178,11 +168,13 @@ def _swap_holding(**overrides):
         rec_floating_rt_spread="0.00",
         rec_pmnt_amt="0", rec_cur_cd="USD",
         rec_rate_tenor="Day", rec_rate_unit="1",
+        rec_reset_dt="Day", rec_reset_unit="1",
         pmnt_fixed_or_floating="Floating",
         pmnt_floating_rt_index="USD-SOFR-OIS",
         pmnt_floating_rt_spread="0.10",
         pmnt_pmnt_amt="0", pmnt_cur_cd_leg="USD",
         pmnt_rate_tenor="Day", pmnt_rate_unit="1",
+        pmnt_reset_dt="Day", pmnt_reset_unit="1",
         ref_inst_type="indexBasket",
         ref_index_name="S&P 500 Index", ref_index_identifier="SPX",
         other_desc="INTERNAL", other_value="SPX-TRS-JPM",

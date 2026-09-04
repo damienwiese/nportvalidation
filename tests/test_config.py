@@ -1,6 +1,9 @@
-"""Tests for config parsing — edge cases and error paths."""
+"""Tests for deterministic config and holdings ingestion contracts."""
+
+import csv
 
 import pytest
+
 from nport.config import parse_config, parse_filing, parse_holdings
 
 
@@ -34,7 +37,7 @@ class TestParseConfig:
     def test_optional_street2(self, tmp_path):
         lines = _minimal_config()
         # Remove regStreet2 line
-        lines = [l for l in lines if not l.startswith("regStreet2")]
+        lines = [line for line in lines if not line.startswith("regStreet2")]
         (tmp_path / "f.txt").write_text("\n".join(lines))
         assert parse_config(tmp_path / "f.txt").reg_street2 == ""
 
@@ -42,6 +45,20 @@ class TestParseConfig:
         lines = ["# comment", "", "  # indented"] + _minimal_config()
         (tmp_path / "f.txt").write_text("\n".join(lines))
         assert parse_config(tmp_path / "f.txt").cik == "0002078265"
+
+    def test_duplicate_key_is_rejected(self, tmp_path):
+        lines = _minimal_config() + ["cik=0000000001"]
+        path = tmp_path / "f.txt"
+        path.write_text("\n".join(lines), encoding="utf-8")
+        with pytest.raises(ValueError, match="duplicate key 'cik'"):
+            parse_config(path)
+
+    def test_unknown_key_is_rejected(self, tmp_path):
+        lines = _minimal_config() + ["legacyOverride=discard-me"]
+        path = tmp_path / "f.txt"
+        path.write_text("\n".join(lines), encoding="utf-8")
+        with pytest.raises(ValueError, match=r"unknown key\(s\): legacyOverride"):
+            parse_config(path)
 
 
 class TestParseFiling:
@@ -59,6 +76,16 @@ class TestParseFiling:
         (tmp_path / "f.txt").write_text("submissionType=NPORT-P\n")
         with pytest.raises(ValueError, match="missing required key"):
             parse_filing(tmp_path / "f.txt")
+
+    def test_duplicate_key_is_rejected(self, tmp_path, fdrs_dir):
+        source = fdrs_dir / "filings" / "2025-12" / "filing_data.txt"
+        path = tmp_path / "filing_data.txt"
+        path.write_text(
+            source.read_text(encoding="utf-8") + "\ntotAssets=1\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="duplicate key 'totAssets'"):
+            parse_filing(path)
 
 
 class TestParseHoldings:
@@ -87,6 +114,37 @@ class TestParseHoldings:
         assert credo[0].lei == "N/A"
         assert credo[0].cusip == "N/A"
 
+    @pytest.mark.parametrize("extra_header,error", [
+        ("unexpectedColumn", "unknown columns: unexpectedColumn"),
+        ("name", "duplicate columns: name"),
+    ])
+    def test_invalid_headers_fail_loudly(
+        self, tmp_path, fdrs_dir, extra_header, error,
+    ):
+        source = fdrs_dir / "filings" / "2025-12" / "holdings.csv"
+        lines = source.read_text(encoding="utf-8").splitlines()
+        lines[0] += f",{extra_header}"
+        path = tmp_path / "holdings.csv"
+        path.write_text("\n".join(lines), encoding="utf-8")
+        with pytest.raises(ValueError, match=error):
+            parse_holdings(path)
+
+    def test_split_satellite_orphan_is_rejected(self, tmp_path, fdrs_dir):
+        base = _make_split_holdings(tmp_path, fdrs_dir)
+        (tmp_path / "debt_securities.csv").write_text(
+            "holdingId,couponKind\nNOT-IN-BASE,Fixed\n", encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="holdingId 'NOT-IN-BASE' not in"):
+            parse_holdings(base)
+
+    def test_split_satellite_conflict_is_rejected(self, tmp_path, fdrs_dir):
+        base = _make_split_holdings(tmp_path, fdrs_dir)
+        (tmp_path / "derivatives.csv").write_text(
+            "holdingId,ticker\nH-1,CONFLICT\n", encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="conflicting value.*ticker"):
+            parse_holdings(base)
+
 
 def _minimal_config(**overrides):
     """Return lines for a minimal valid fund_config.txt."""
@@ -103,3 +161,17 @@ def _minimal_config(**overrides):
     }
     defaults.update(overrides)
     return [f"{k}={v}" for k, v in defaults.items()]
+
+
+def _make_split_holdings(tmp_path, fdrs_dir):
+    """Copy the canonical flat fixture and add stable holding IDs."""
+    source = fdrs_dir / "filings" / "2025-12" / "holdings.csv"
+    with source.open(newline="", encoding="utf-8") as file:
+        rows = list(csv.reader(file))
+    rows[0].insert(0, "holdingId")
+    for index, row in enumerate(rows[1:], 1):
+        row.insert(0, f"H-{index}")
+    target = tmp_path / "holdings.csv"
+    with target.open("w", newline="", encoding="utf-8") as file:
+        csv.writer(file).writerows(rows)
+    return target

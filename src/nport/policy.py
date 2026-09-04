@@ -7,17 +7,15 @@ field through this module.
 
 from __future__ import annotations
 
-import csv
 from calendar import monthrange
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
 
 from nport.models import FilingData, FundConfig
-
+from nport.source_policy import is_prohibited_source
 
 DERIVATIVES_REGIMES = {"NONE", "LIMITED", "VAR_RELATIVE", "VAR_ABSOLUTE"}
-_PROHIBITED_SOURCES = ("us bank", "u.s. bank", "usbank", "administrator reference")
 
 
 @dataclass(frozen=True)
@@ -80,74 +78,6 @@ def _validate_mmdd(value: str) -> tuple[int, int]:
     return month, day
 
 
-class FundRegistry:
-    """Approved, effective-dated policy records keyed by fund ticker."""
-
-    REQUIRED_COLUMNS = {
-        "ticker", "fiscal_year_end_mmdd", "derivatives_regime",
-        "liquidity_required", "cash_b2f_required", "active_from", "active_to",
-        "approved_by", "approved_at", "source_system", "source_ref",
-        "required_sources",
-    }
-
-    def __init__(self, policies: list[FundPolicy], source_path: Path):
-        self.policies = policies
-        self.source_path = source_path
-
-    @classmethod
-    def from_csv(cls, path: str | Path) -> "FundRegistry":
-        source_path = Path(path)
-        policies: list[FundPolicy] = []
-        with open(source_path, newline="", encoding="utf-8-sig") as handle:
-            reader = csv.DictReader(handle)
-            missing = cls.REQUIRED_COLUMNS - set(reader.fieldnames or ())
-            if missing:
-                raise ValueError(f"{source_path}: missing registry columns: {sorted(missing)}")
-            for rownum, row in enumerate(reader, 2):
-                source_system = row["source_system"].strip()
-                if any(token in source_system.lower() for token in _PROHIBITED_SOURCES):
-                    raise ValueError(
-                        f"{source_path}:{rownum}: external comparison data cannot be a policy source"
-                    )
-                regime = row["derivatives_regime"].strip().upper()
-                if regime not in DERIVATIVES_REGIMES:
-                    raise ValueError(f"{source_path}:{rownum}: invalid derivatives_regime {regime!r}")
-                _validate_mmdd(row["fiscal_year_end_mmdd"])
-                active_to = row["active_to"].strip()
-                policy = FundPolicy(
-                    ticker=row["ticker"].strip().upper(),
-                    fiscal_year_end_mmdd=row["fiscal_year_end_mmdd"].strip(),
-                    derivatives_regime=regime,
-                    liquidity_required=_parse_bool(row["liquidity_required"], "liquidity_required"),
-                    cash_b2f_required=_parse_bool(row["cash_b2f_required"], "cash_b2f_required"),
-                    active_from=_parse_date(row["active_from"], "active_from"),
-                    active_to=_parse_date(active_to, "active_to") if active_to else None,
-                    approved_by=row["approved_by"].strip(),
-                    approved_at=_parse_datetime(row["approved_at"].strip()),
-                    source_system=source_system,
-                    source_ref=row["source_ref"].strip(),
-                    required_sources=tuple(
-                        value.strip() for value in row["required_sources"].split(";") if value.strip()
-                    ),
-                )
-                if not policy.ticker or not policy.approved_by or not policy.source_ref:
-                    raise ValueError(f"{source_path}:{rownum}: ticker and approval evidence are required")
-                policies.append(policy)
-        return cls(policies, source_path)
-
-    def resolve(self, ticker: str, report_date: date) -> FundPolicy:
-        matches = [
-            policy for policy in self.policies
-            if policy.ticker == ticker.upper() and policy.is_active(report_date)
-        ]
-        if len(matches) != 1:
-            raise ValueError(
-                f"registry requires exactly one active policy for {ticker.upper()} on "
-                f"{report_date.isoformat()}; found {len(matches)}"
-            )
-        return matches[0]
-
-
 def policy_from_config(config: FundConfig, ticker: str, source_ref: str | Path) -> FundPolicy:
     """Load approved policy from the existing per-fund configuration.
 
@@ -168,9 +98,8 @@ def policy_from_config(config: FundConfig, ticker: str, source_ref: str | Path) 
         raise ValueError(
             "fund_config.txt is missing approved policy fields: " + ", ".join(missing)
         )
-    source_text = str(source_ref).lower()
-    if any(token in source_text for token in _PROHIBITED_SOURCES):
-        raise ValueError("U.S. Bank/admin comparison data cannot approve fund policy")
+    if is_prohibited_source(str(source_ref)):
+        raise ValueError("prohibited custody/prepared-filing data cannot approve fund policy")
     regime = config.derivatives_regime_policy.strip().upper()
     if regime not in DERIVATIVES_REGIMES:
         raise ValueError(f"invalid derivativesRegimePolicy {regime!r}")
@@ -219,6 +148,14 @@ def derive_context_from_config(
 
 
 def report_date_for_period(period: str) -> date:
+    if (
+        not isinstance(period, str)
+        or len(period) != 7
+        or period[4] != "-"
+        or not period.isascii()
+        or not (period[:4] + period[5:]).isdigit()
+    ):
+        raise ValueError(f"period must be YYYY-MM, got {period!r}")
     try:
         year, month = (int(part) for part in period.split("-"))
         return date(year, month, monthrange(year, month)[1])
@@ -243,19 +180,6 @@ def submission_type_for(report_date: date, fiscal_year_end_mmdd: str) -> str:
         ((fiscal_month - offset - 1) % 12) + 1 for offset in (0, 3, 6, 9)
     }
     return "NPORT-P" if report_date.month in fiscal_quarter_end_months else "NPORT-NP"
-
-
-def derive_context(registry: FundRegistry, ticker: str, period: str) -> FilingContext:
-    report_date = report_date_for_period(period)
-    policy = registry.resolve(ticker, report_date)
-    submission_type = submission_type_for(report_date, policy.fiscal_year_end_mmdd)
-    return FilingContext(
-        report_date=report_date,
-        fiscal_year_end=fiscal_year_end_on_or_after(report_date, policy.fiscal_year_end_mmdd),
-        submission_type=submission_type,
-        is_confidential=submission_type == "NPORT-NP",
-        policy=policy,
-    )
 
 
 def apply_context(filing: FilingData, context: FilingContext) -> FilingData:

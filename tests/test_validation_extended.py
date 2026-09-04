@@ -1,6 +1,6 @@
-"""Unit tests for extended validation — derivatives, debt, conditionals, pctVal tolerance."""
+"""Unit tests for extended validation of derivatives, debt, and conditionals."""
 
-from nport.input_validation import validate_holding, validate_holdings
+from nport.input_validation import validate_holding
 from nport.models import Holding
 
 
@@ -15,6 +15,8 @@ def _holding(**overrides):
         is_cash_collateral="N", is_non_cash_collateral="N",
         is_loan_by_fund="N",
     )
+    if overrides.get("deriv_cat"):
+        defaults["payoff_profile"] = "N/A"
     defaults.update(overrides)
     return Holding(**defaults)
 
@@ -30,10 +32,15 @@ class TestDerivativeValidation:
             counterparty_lei="W22LROWP2IHZNBB6K528",
             put_or_call="Call",
             written_or_pur="Purchased",
+            share_no="100",
             exercise_price="150.00",
+            exercise_price_cur_cd="USD",
             exp_dt="2026-06-30",
             delta="0.65",
             unrealized_appr="500.00",
+            ref_inst_type="indexBasket",
+            ref_index_name="S&P 500",
+            ref_index_identifier="SPX",
         )
         errors, _ = validate_holding(h, 0)
         assert not errors
@@ -178,6 +185,9 @@ class TestDebtValidation:
             maturity_dt="2030-12-31",
             coupon_kind="Fixed",
             annualized_rt="5.25",
+            is_default="N",
+            are_intrst_pmnts_in_arrs="N",
+            is_paid_kind="N",
         )
         errors, _ = validate_holding(h, 0)
         assert not errors
@@ -239,75 +249,25 @@ class TestDebtValidation:
 
 
 class TestConditionalValidation:
-    def test_other_issuer_cat_without_desc_warns(self):
+    def test_other_issuer_cat_without_desc_fails(self):
         h = _holding(issuer_cat="OTHER")
-        _, warnings = validate_holding(h, 0)
-        assert any("issuerConditionalDesc" in w for w in warnings)
+        errors, _ = validate_holding(h, 0)
+        assert any("issuerConditionalDesc" in error for error in errors)
 
     def test_other_issuer_cat_with_desc_no_warning(self):
         h = _holding(issuer_cat="OTHER", issuer_conditional_desc="Private fund")
         _, warnings = validate_holding(h, 0)
         assert not any("issuerConditionalDesc" in w for w in warnings)
 
-    def test_other_asset_cat_without_desc_warns(self):
+    def test_other_asset_cat_without_desc_fails(self):
         h = _holding(asset_cat="OTHER")
-        _, warnings = validate_holding(h, 0)
-        assert any("assetConditionalDesc" in w for w in warnings)
+        errors, _ = validate_holding(h, 0)
+        assert any("assetConditionalDesc" in error for error in errors)
 
     def test_other_asset_cat_with_desc_no_warning(self):
         h = _holding(asset_cat="OTHER", asset_conditional_desc="FLEX option")
         _, warnings = validate_holding(h, 0)
         assert not any("assetConditionalDesc" in w for w in warnings)
-
-
-# ── pctVal tolerance ──────────────────────────────────────
-
-
-class TestPctValTolerance:
-    def test_equity_strict_tolerance(self):
-        """Equity-only: 5% tolerance."""
-        holdings = [_holding(pct_val="93.0")]
-        _, warnings = validate_holdings(holdings)
-        assert any("pctVal sum" in w for w in warnings)
-
-    def test_equity_within_tolerance(self):
-        holdings = [_holding(pct_val="96.0")]
-        _, warnings = validate_holdings(holdings)
-        assert not any("pctVal sum" in w for w in warnings)
-
-    def test_derivative_wide_tolerance(self):
-        """Derivative funds: 20% tolerance."""
-        deriv = _holding(
-            pct_val="150.0",
-            deriv_cat="SWP",
-            counterparty_name="GS",
-            counterparty_lei="W22LROWP2IHZNBB6K528",
-            termination_dt="2027-01-01",
-            notional_amt="1000000",
-            rec_fixed_or_floating="Fixed",
-            pmnt_fixed_or_floating="Floating",
-            unrealized_appr="0",
-        )
-        equity = _holding(pct_val="-40.0")
-        _, warnings = validate_holdings([deriv, equity])
-        # 150 + (-40) = 110, within ±20 of 100
-        assert not any("pctVal sum" in w for w in warnings)
-
-    def test_derivative_exceeds_wide_tolerance(self):
-        deriv = _holding(
-            pct_val="250.0",
-            deriv_cat="SWP",
-            counterparty_name="GS",
-            counterparty_lei="W22LROWP2IHZNBB6K528",
-            termination_dt="2027-01-01",
-            notional_amt="1000000",
-            rec_fixed_or_floating="Fixed",
-            pmnt_fixed_or_floating="Floating",
-            unrealized_appr="0",
-        )
-        _, warnings = validate_holdings([deriv])
-        # 250 is > 120 threshold
-        assert any("pctVal sum" in w for w in warnings)
 
 
 # ── Swap leg validation ──────────────────────────────────
@@ -320,7 +280,11 @@ class TestSwapLegValidation:
             counterparty_name="GS",
             counterparty_lei="W22LROWP2IHZNBB6K528",
             termination_dt="2027-01-01",
+            swap_flag="N",
+            upfront_pmnt="0", pmnt_cur_cd="USD",
+            upfront_rcpt="0", rcpt_cur_cd="USD",
             notional_amt="1000000",
+            swap_cur_cd="USD",
             unrealized_appr="0",
         )
         defaults.update(overrides)
@@ -329,8 +293,12 @@ class TestSwapLegValidation:
     def test_valid_fixed_receive_floating_pay(self):
         h = self._swap(
             rec_fixed_or_floating="Fixed", rec_fixed_rt="0.05",
+            rec_pmnt_amt="0", rec_cur_cd="USD",
             pmnt_fixed_or_floating="Floating",
             pmnt_floating_rt_index="USD-SOFR", pmnt_floating_rt_spread="0.01",
+            pmnt_pmnt_amt="0", pmnt_cur_cd_leg="USD",
+            pmnt_rate_tenor="Day", pmnt_rate_unit="1",
+            pmnt_reset_dt="Day", pmnt_reset_unit="1",
         )
         errors, _ = validate_holding(h, 0)
         assert not errors
@@ -462,6 +430,7 @@ class TestForwardFutureValidation:
             payoff_prof_deriv="Long",
             exp_dt="2026-06-30",
             notional_amt="500000",
+            swap_cur_cd="USD",
         )
         errors, _ = validate_holding(h, 0)
         assert not errors

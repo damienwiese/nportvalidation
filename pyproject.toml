@@ -14,10 +14,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-    "reportlab>=4.0",
+    "ruff>=0.14",
 ]
-# bloomberg: requires blpapi>=3.0 (not on PyPI — install via Bloomberg's index:
-#   pip install --index-url=https://blpapi.bloomberg.com/release blpapi)
 
 [project.scripts]
 nport = "nport.cli:main"
@@ -25,5 +23,21 @@ nport = "nport.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/nport"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"schemas/v1_13/eis_Common.xsd" = "nport/schemas/v1_13/eis_Common.xsd"
+"schemas/v1_13/eis_ISO_StateCodes.xsd" = "nport/schemas/v1_13/eis_ISO_StateCodes.xsd"
+"schemas/v1_13/eis_NPORT_common.xsd" = "nport/schemas/v1_13/eis_NPORT_common.xsd"
+"schemas/v1_13/eis_NPORT_Filer.xsd" = "nport/schemas/v1_13/eis_NPORT_Filer.xsd"
+"schemas/v1_13/eis_stateCodes.xsd" = "nport/schemas/v1_13/eis_stateCodes.xsd"
+
+[tool.hatch.build.targets.sdist]
+exclude = ["/archive", "/data", "/output", "/outputs", "/tmp"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+extend-exclude = ["archive"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

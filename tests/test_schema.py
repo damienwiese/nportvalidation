@@ -2,12 +2,23 @@
 
 from dataclasses import fields
 
-from nport.config import _HOLDINGS_KEY_MAP
-from nport.models import Holding
+from nport.config import CONFIG_KEY_MAP, FILING_KEY_MAP, HOLDINGS_KEY_MAP
+from nport.models import FilingData, FundConfig, Holding
 from nport.schema import FIELD_BY_NAME, FIELD_SPECS, FieldSpec, get_required_fields
 
 
 class TestFieldSpecCoverage:
+    def test_external_maps_cover_each_model_exactly_once(self):
+        for model_type, key_map in (
+            (FundConfig, CONFIG_KEY_MAP),
+            (FilingData, FILING_KEY_MAP),
+            (Holding, HOLDINGS_KEY_MAP),
+        ):
+            model_fields = {field.name for field in fields(model_type)}
+            mapped_fields = list(key_map.values())
+            assert set(mapped_fields) == model_fields
+            assert len(mapped_fields) == len(set(mapped_fields))
+
     def test_covers_every_holding_field(self):
         """Every Holding dataclass field should have a FieldSpec."""
         holding_fields = {f.name for f in fields(Holding)}
@@ -16,15 +27,15 @@ class TestFieldSpecCoverage:
         assert not missing, f"Holding fields missing from schema: {missing}"
 
     def test_covers_every_key_map_entry(self):
-        """Every _HOLDINGS_KEY_MAP value should have a FieldSpec."""
-        key_map_fields = set(_HOLDINGS_KEY_MAP.values())
+        """Every HOLDINGS_KEY_MAP value should have a FieldSpec."""
+        key_map_fields = set(HOLDINGS_KEY_MAP.values())
         schema_fields = {s.name for s in FIELD_SPECS}
         missing = key_map_fields - schema_fields
         assert not missing, f"Key map fields missing from schema: {missing}"
 
     def test_csv_headers_match_key_map(self):
-        """FieldSpec csv_header should match _HOLDINGS_KEY_MAP."""
-        field_to_csv = {v: k for k, v in _HOLDINGS_KEY_MAP.items()}
+        """FieldSpec csv_header should match HOLDINGS_KEY_MAP."""
+        field_to_csv = {v: k for k, v in HOLDINGS_KEY_MAP.items()}
         for spec in FIELD_SPECS:
             expected = field_to_csv.get(spec.name, spec.name)
             assert spec.csv_header == expected, f"{spec.name}: expected '{expected}', got '{spec.csv_header}'"

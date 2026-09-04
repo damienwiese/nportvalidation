@@ -1,112 +1,95 @@
-# nport
+# N-PORT filing pipeline
 
-Build SEC Form N-PORT XML from the operating inputs already received: custodian
-positions, EagleSTAR fund accounting, create/redeem orders, Bloomberg enrichment,
-and one centralized human-review workbook.
-
-## One-time setup
-
-```powershell
-Set-Location "C:\Users\damie\nportvalidation"
-py -3.11 -m venv .venv
-& ".\.venv\Scripts\python.exe" -m pip install -e ".[dev]"
-```
-
-## Complete monthly workflow
-
-The example period is `2026-06`. There is no manually created `positions.csv`.
-
-### 1. Put the received files in these three folders
+This repository has one supported operating path:
 
 ```text
-data/custodian/          # custodian positions CSV
-data/fund_accounting/    # EagleSTAR .zip or .mbox
-data/orders/             # create/redeem orders CSV
+multi-fund input workbook OR canonical positions + optional orders
+    -> immutable normalized CSVs
+    -> filing_inputs.xlsx
+    -> Bloomberg calculation and human review
+    -> status / preflight / validation
+    -> versioned canonical bundle
+    -> SEC-XSD-valid XML and release manifest
 ```
 
-### 2. Load all three inputs
+It does not connect to mailboxes, SFTP servers, accounting systems, Bloomberg
+APIs, or EDGAR. Source files are acquired outside the application. Bloomberg
+enrichment occurs when an operator opens and saves the generated workbook on a
+Bloomberg-enabled Excel workstation.
+
+## Install
 
 ```powershell
-& ".\.venv\Scripts\nport.exe" masters 2026-06
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
 ```
 
-The command auto-detects the files by their contents and prints the exact paths
-it selected. It creates:
+## Monthly commands
+
+```powershell
+# Create the July workbook covering the complete 197-fund universe.
+nport input-template 2026-07
+
+# After completing it, select one fund-period into the normal review path.
+nport prepare FDRS 2026-07 --input-workbook data\inputs\nport-v1.13\nport-inputs-v4_2026-07_nport-v1.13.xlsx
+
+# The direct CSV entry point remains available for system exports.
+nport prepare FDRS 2026-07 --positions C:\intake\fdrs_positions.csv --orders C:\intake\orders.csv
+nport status FDRS 2026-07
+nport preflight FDRS 2026-07
+nport validate FDRS 2026-07
+nport build FDRS 2026-07 --dry-run
+nport build FDRS 2026-07
+```
+
+The input workbook contains three fund-specific sheets for every registered
+fund—`<FUND>_Config`, `<FUND>_FundData`, and `<FUND>_Positions`—plus one
+consolidated `Orders` sheet. It has only identifiers and values to enter; review
+statuses, provenance, and reconciliation controls are downstream. Controlled
+Bloomberg formulas populate the three fund returns and allowlisted position
+reference fields after the lookup identifiers are entered and the workbook is
+calculated and saved in Bloomberg-enabled Excel. Importing it writes
+content-hashed, immutable normalized CSVs beside the workbook, then invokes the
+same `prepare` implementation as the direct CSV path.
+
+`prepare` writes
+`data/funds/<fund>/filings/<period>/filing_inputs.xlsx`. Open that workbook on
+Bloomberg, save calculated results, and complete every `MISSING` row in
+`FundFields`, `HoldingFields`, and `ReconciliationInputs`.
+
+`build` has no direct-file bypass. It always evaluates the reviewed workbook,
+applies policy from the fund's reviewed configuration, requires reconciliation
+to pass, validates the serialized canonical bundle, and validates the XML
+against the bundled SEC schema.
+
+Successful builds write:
 
 ```text
-data/master/security_master.xlsx
-data/master/filing_master.xlsx
+data/builds/<fund>/<period>/nport-v<SCHEMA>/<run-id>/
+    fund_config.txt
+    filing_data.txt
+    holdings.csv
+    source_manifest.csv
+    field_provenance.csv
+    reconciliation.csv
+    input_receipt.json
+
+output/<fund>/<period>/nport-v<SCHEMA>/<run-id>/<FUND>_<PERIOD>_nport-v<SCHEMA>_<RUN-ID>.xml
+output/<fund>/<period>/nport-v<SCHEMA>/<run-id>/<FUND>_<PERIOD>_nport-v<SCHEMA>_<RUN-ID>.manifest.json
 ```
 
-If more than one candidate exists, specify the exact files explicitly:
+TEST is the safe default. The application does not transmit filings to EDGAR.
+Part F / NPORT-EX is not implemented and is intentionally absent from the
+input workbook.
 
-```powershell
-& ".\.venv\Scripts\nport.exe" masters 2026-06 `
-  --custodian ".\data\custodian\custodian.csv" `
-  --fund-accounting ".\data\fund_accounting\eaglestar.zip" `
-  --ap-orders ".\data\orders\create_redeem.csv"
-```
+Only reviewed, authoritative fund configurations belong in `data/funds/`.
+Synthetic configs and historical filing data are archived and cannot be selected
+by the default CLI path. See [data/funds/README.md](data/funds/README.md) for the
+production-registry contract.
 
-### 3. Let Bloomberg populate
-
-Open both master workbooks on a Bloomberg terminal, wait for formulas to finish,
-then save and close both files.
-
-### 4. Complete the one human-review workbook
-
-```powershell
-& ".\.venv\Scripts\nport.exe" mergehumanreview 2026-06
-```
-
-Open `data/humanreview/2026-06_review.xlsx`. Fill every required blank reported
-by the command. Save and close it, then apply the entries:
-
-```powershell
-& ".\.venv\Scripts\nport.exe" mergehumanreview 2026-06
-```
-
-If the command still reports required blanks, fix those exact rows and rerun it.
-
-### 5. Write the reviewed data to each fund
-
-```powershell
-& ".\.venv\Scripts\nport.exe" split 2026-06
-```
-
-### 6. Build XML
-
-```powershell
-& ".\.venv\Scripts\nport.exe" build
-```
-
-To build only one fund:
-
-```powershell
-& ".\.venv\Scripts\nport.exe" build fdrs 2026-06
-```
-
-The final operating sequence is therefore:
-
-```text
-masters -> open/save both workbooks in Bloomberg -> mergehumanreview
--> human fills one review workbook -> mergehumanreview -> split -> build
-```
-
-Custodian, EagleSTAR, and create/redeem data enter only through `masters`.
-Human corrections enter only through `data/humanreview/<period>_review.xlsx`.
-Do not manually create a `positions.csv` for this workflow.
-
-### Optional read-only comparison
-
-Run this only after the independent XML exists and only when the reference uses
-the same fund and report date:
-
-```powershell
-& ".\.venv\Scripts\nport.exe" compare-reference `
-  --internal ".\output\FDRS_2026-06.xml" `
-  --reference "<aligned-reference.xml>"
-```
-
-Reference filings are comparison outputs; they are not operating inputs.
-
-Run `nport guide` at any time to print the same sequence in the terminal.
+See [docs/pipeline.md](docs/pipeline.md) for the handoffs and failure behavior,
+and [docs/inputs.md](docs/inputs.md) for the fund-partitioned input contract. See
+[docs/field-lineage.md](docs/field-lineage.md) for source-to-model-to-XML
+mapping. Everything displaced by this cleanup is preserved under the single
+`archive/cleanup-20260904/` root and is not part of the installed package.

@@ -1,0 +1,62 @@
+# CJUN 2026-06 filing data
+# rtn1-3 from Bloomberg; net/total assets from custodian; gains/flows from fund accounting.
+
+# Submission
+submissionType=NPORT-P
+liveTestFlag=TEST
+repPdEnd=2026-06-30
+repPdDate=2026-06-30
+isFinalFiling=N
+dateSigned=2026-07-31
+
+# Fund Financials
+totAssets=1362646.42
+totLiabs=309.62
+netAssets=1362336.80
+
+# Balance Sheet Items
+assetsAttrMiscSec=0
+assetsInvested=0
+amtPayOneYrBanksBorr=0
+amtPayOneYrCtrldComp=0
+amtPayOneYrOthAffil=0
+amtPayOneYrOther=309.62
+amtPayAftOneYrBanksBorr=0
+amtPayAftOneYrCtrldComp=0
+amtPayAftOneYrOthAffil=0
+amtPayAftOneYrOther=0
+delayDeliv=0
+standByCommit=0
+liquidPref=0
+isNonCashCollateral=N
+
+# Returns (rtn1-3 from Bloomberg; gains from fund accounting)
+rtn1=N/A
+rtn2=N/A
+rtn3=-0.49
+netRealizedGainMon1=0.00
+netUnrealizedApprMon1=0.00
+netRealizedGainMon2=0.00
+netUnrealizedApprMon2=0.00
+netRealizedGainMon3=-191.38
+netUnrealizedApprMon3=-14101.70
+
+# Flows (from transfer agent / fund accounting)
+mon1Sales=0.00
+mon1Redemption=0.00
+mon1Reinvestment=N/A
+mon2Sales=250000.00
+mon2Redemption=0.00
+mon2Reinvestment=N/A
+mon3Sales=1126042.50
+mon3Redemption=0.00
+mon3Reinvestment=N/A
+
+# Designated Index
+nameDesignatedIndex=S&P 500 Index
+indexIdentifier=SPX
+
+# B.3 Risk Metrics (Bloomberg durations × custodian market value)
+curMetricsJson=[{"curCd": "USD", "dv01_3month": "0.00", "dv100_3month": "0.00", "dv01_1year": "20.43", "dv100_1year": "2043.40", "dv01_5year": "0.00", "dv100_5year": "0.00", "dv01_10year": "0.00", "dv100_10year": "0.00", "dv01_30year": "0.00", "dv100_30year": "0.00"}]
+creditSprdRiskIgJson={"3month": "0.00", "1year": "20.41", "5year": "0.00", "10year": "0.00", "30year": "0.00"}
+creditSprdRiskNonigJson={"3month": "0.00", "1year": "0.00", "5year": "0.00", "10year": "0.00", "30year": "0.00"}

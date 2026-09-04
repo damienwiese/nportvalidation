@@ -6,23 +6,30 @@ schema files are present and intact.
 
 import hashlib
 import json
+import os
 import re
+import tempfile
 import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-from nport.constants import DEFAULT_SCHEMA_DIR
+from nport.constants import DEFAULT_SCHEMA_DIR, NPORT_SCHEMA_VERSION
 
 _TECH_SPECS_URL = "https://www.sec.gov/submit-filings/technical-specifications"
 
-CURRENT_SCHEMA_VERSION = "1.13"
+CURRENT_SCHEMA_VERSION = NPORT_SCHEMA_VERSION
 CURRENT_SCHEMA_DATE = "2025-03-17"
 CURRENT_SCHEMA_ZIP = (
     "https://www.sec.gov/files/edgar/filer-information/"
     "specifications/edgar-form-n-port-xml-tech-spec-113.zip"
 )
 
-_CACHE_FILE = DEFAULT_SCHEMA_DIR / ".schema_check_cache.json"
+# Network-throttling state is runtime data, not a repository artifact.  Operators
+# may pin the location with NPORT_CACHE_DIR; otherwise use the OS temp area.
+_CACHE_DIR = Path(
+    os.environ.get("NPORT_CACHE_DIR", Path(tempfile.gettempdir()) / "nportvalidation")
+)
+_CACHE_FILE = _CACHE_DIR / f"schema-check-v{CURRENT_SCHEMA_VERSION}.json"
 
 EXPECTED_SCHEMA_FILES = [
     "eis_NPORT_Filer.xsd",
@@ -65,7 +72,7 @@ def check_for_schema_update(
 
     if not force and _CACHE_FILE.exists():
         try:
-            cache = json.loads(_CACHE_FILE.read_text())
+            cache = json.loads(_CACHE_FILE.read_text(encoding="utf-8"))
             if (now - datetime.fromisoformat(cache["last_check"])).days < cache_days:
                 if cache.get("newer_version"):
                     warnings.append(
@@ -74,7 +81,7 @@ def check_for_schema_update(
                     )
                     return cache["newer_version"], warnings
                 return None, warnings
-        except (json.JSONDecodeError, KeyError, ValueError):
+        except (json.JSONDecodeError, KeyError, OSError, TypeError, ValueError):
             pass
 
     try:
@@ -84,7 +91,7 @@ def check_for_schema_update(
         )
         with urllib.request.urlopen(req, timeout=15) as resp:
             html = resp.read().decode("utf-8", errors="replace")
-    except Exception as e:
+    except OSError as e:
         warnings.append(f"Could not check for schema updates: {e}")
         return None, warnings
 
@@ -106,11 +113,14 @@ def check_for_schema_update(
 
     try:
         _CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _CACHE_FILE.write_text(json.dumps({
-            "last_check": now.isoformat(),
-            "current_version": CURRENT_SCHEMA_VERSION,
-            "newer_version": newer_version,
-        }))
+        _CACHE_FILE.write_text(
+            json.dumps({
+                "last_check": now.isoformat(),
+                "current_version": CURRENT_SCHEMA_VERSION,
+                "newer_version": newer_version,
+            }),
+            encoding="utf-8",
+        )
     except OSError:
         pass  # Cache is non-critical
 

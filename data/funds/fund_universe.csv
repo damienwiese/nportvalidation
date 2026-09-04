@@ -1,0 +1,198 @@
+fund,category
+AV,Thematic
+BAY,Thematic
+BLCK,Thematic
+BREW,Thematic
+BZZ,Thematic
+CBOT,Thematic
+CMAG,Thematic
+CQTM,Thematic
+DIPR,Thematic
+DOCK,Thematic
+EUV,Thematic
+EYES,Thematic
+FDRS,Thematic
+GASZ,Thematic
+GLAM,Thematic
+GNMX,Thematic
+HULL,Thematic
+JOUL,Thematic
+KYC,Thematic
+LATR,Thematic
+NYNY,Thematic
+ODDZ,Thematic
+OWN,Thematic
+PTNT,Thematic
+STYL,Thematic
+WATS,Thematic
+WNDR,Thematic
+WR,Thematic
+XA,Thematic
+YUNG,Thematic
+SK,2x Leveraged
+SNDC,2x Leveraged
+FDRX,2x Leveraged
+EUVX,2x Leveraged
+MSFC,2x Leveraged
+GOGL,2x Leveraged
+USLX,2x Leveraged
+WDCC,2x Leveraged
+MRVX,2x Leveraged
+INT,2x Leveraged
+MIC,2x Leveraged
+MSTC,2x Leveraged
+CRWX,2x Leveraged
+SIMX,2x Leveraged
+CIR,2x Leveraged
+XTAI,2x Leveraged
+PLTL,2x Leveraged
+XLEX,2x Leveraged
+KRWX,2x Leveraged
+ONTX,2x Leveraged
+AMDC,2x Leveraged
+NOWX,2x Leveraged
+XSEM,2x Leveraged
+NBIC,2x Leveraged
+AMAA,2x Leveraged
+ORAC,2x Leveraged
+CRWC,2x Leveraged
+BNMC,2x Leveraged
+XLVX,2x Leveraged
+XLFX,2x Leveraged
+BEC,2x Leveraged
+COIX,2x Leveraged
+XBIX,2x Leveraged
+LASC,2x Leveraged
+OKLC,2x Leveraged
+NFX,2x Leveraged
+SMCC,2x Leveraged
+APMI,2x Leveraged
+UCTX,2x Leveraged
+MSIX,2x Leveraged
+USMX,2x Leveraged
+UMCX,2x Leveraged
+UUUC,2x Leveraged
+USX,2x Leveraged
+USSX,2x Leveraged
+IOSX,2x Leveraged
+XLIX,2x Leveraged
+NVC,2x Leveraged
+ACHX,2x Leveraged
+LRCC,2x Leveraged
+MEGX,2x Leveraged
+TPLX,2x Leveraged
+CARX,2x Leveraged
+FBX,2x Leveraged
+COHC,2x Leveraged
+VRC,2x Leveraged
+IREC,2x Leveraged
+CRD,2x Leveraged
+XKRE,2x Leveraged
+AXTC,2x Leveraged
+BRZX,2x Leveraged
+XCOM,2x Leveraged
+XLPX,2x Leveraged
+XEUR,2x Leveraged
+XAGI,2x Leveraged
+HOOC,2x Leveraged
+TAJX,2x Leveraged
+SMRX,2x Leveraged
+MPWC,2x Leveraged
+XLBX,2x Leveraged
+WX,2x Leveraged
+XIWC,2x Leveraged
+XW,2x Leveraged
+RKX,2x Leveraged
+BRKL,2x Leveraged
+BABC,2x Leveraged
+LITC,2x Leveraged
+EMXX,2x Leveraged
+ASMZ,2x Leveraged
+XLYX,2x Leveraged
+TEMC,2x Leveraged
+XLUX,2x Leveraged
+USGX,2x Leveraged
+TERC,2x Leveraged
+GLX,2x Leveraged
+CCPX,2x Leveraged
+SOFC,2x Leveraged
+TESC,2x Leveraged
+NVOC,2x Leveraged
+JOBC,2x Leveraged
+ACMM,2x Leveraged
+UN,2x Leveraged
+RMBC,2x Leveraged
+AVGC,2x Leveraged
+TWSC,2x Leveraged
+RDDC,2x Leveraged
+MNSX,2x Leveraged
+XQTM,2x Leveraged
+XLKX,2x Leveraged
+RIVC,2x Leveraged
+ONDC,2x Leveraged
+KEYX,2x Leveraged
+WEBX,2x Leveraged
+MHX,2x Leveraged
+NVTC,2x Leveraged
+GMEC,2x Leveraged
+GEVC,2x Leveraged
+APPC,2x Leveraged
+UPSC,2x Leveraged
+XHOA,2x Leveraged
+LRNX,2x Leveraged
+ALA,2x Leveraged
+XPAV,2x Leveraged
+CAMC,2x Leveraged
+ARMA,2x Leveraged
+RGTC,2x Leveraged
+HIMC,2x Leveraged
+QUA,2x Leveraged
+CRUC,2x Leveraged
+ASTT,2x Leveraged
+AMKX,2x Leveraged
+ACLZ,2x Leveraged
+IONC,2x Leveraged
+CIFC,2x Leveraged
+EO,2x Leveraged
+HAUG,Structured Buffer
+QQMY,Structured Buffer
+MAYC,Structured Buffer
+CMAY,Structured Buffer
+SCMY,Structured Buffer
+HMAY,Structured Buffer
+QMY,Structured Buffer
+CTMA,Structured Buffer
+IDMY,Structured Buffer
+EMMY,Structured Buffer
+HJUN,Structured Buffer
+JULC,Structured Buffer
+IDJN,Structured Buffer
+CTJN,Structured Buffer
+SCJL,Structured Buffer
+CJUN,Structured Buffer
+HJLY,Structured Buffer
+QQJL,Structured Buffer
+QJL,Structured Buffer
+EMJL,Structured Buffer
+CJUL,Structured Buffer
+CTJL,Structured Buffer
+IDJL,Structured Buffer
+JUNC,Structured Buffer
+SCAU,Structured Buffer
+IDAU,Structured Buffer
+QQJN,Structured Buffer
+EMJN,Structured Buffer
+SCJN,Structured Buffer
+QQAU,Structured Buffer
+AUGC,Structured Buffer
+EMAU,Structured Buffer
+QAU,Structured Buffer
+CAUG,Structured Buffer
+CTAU,Structured Buffer
+QJN,Structured Buffer
+CBIL,Fixed Income
+CGOV,Fixed Income
+CUST,Fixed Income
+CIEI,Fixed Income
+CIVG,Fixed Income
+CHYG,Fixed Income

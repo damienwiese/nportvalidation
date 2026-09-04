@@ -2,6 +2,7 @@
 
 import json
 
+import pytest
 from lxml import etree
 
 from nport.builder import NportBuilder
@@ -111,6 +112,9 @@ class TestDebtSec:
             maturity_dt="2030-12-31",
             coupon_kind="Fixed",
             annualized_rt="5.25",
+            is_default="N",
+            are_intrst_pmnts_in_arrs="N",
+            is_paid_kind="N",
             asset_cat="DBT",
         )
         sec = _build_single(h)
@@ -120,7 +124,7 @@ class TestDebtSec:
         assert ds.find("n:couponKind", NS).text == "Fixed"
         assert ds.find("n:annualizedRt", NS).text == "5.25"
 
-    def test_default_flags(self):
+    def test_explicit_debt_flags(self):
         h = _holding(
             maturity_dt="2030-12-31",
             coupon_kind="Fixed",
@@ -135,18 +139,14 @@ class TestDebtSec:
         assert ds.find("n:areIntrstPmntsInArrs", NS).text == "N"
         assert ds.find("n:isPaidKind", NS).text == "N"
 
-    def test_flags_default_to_N_when_empty(self):
-        """XSD requires all three flags (minOccurs=1); default to 'N'."""
+    def test_empty_flags_are_not_invented(self):
         h = _holding(
             maturity_dt="2030-12-31",
             coupon_kind="Floating",
             annualized_rt="3.50",
         )
-        sec = _build_single(h)
-        ds = sec.find("n:debtSec", NS)
-        assert ds.find("n:isDefault", NS).text == "N"
-        assert ds.find("n:areIntrstPmntsInArrs", NS).text == "N"
-        assert ds.find("n:isPaidKind", NS).text == "N"
+        with pytest.raises(ValueError, match="canonical model is not serializable"):
+            _build_single(h)
 
 
 # ── Option Derivative ─────────────────────────────────────
@@ -156,6 +156,7 @@ class TestOptionDerivative:
     def _option_holding(self, **extra):
         defaults = dict(
             deriv_cat="OPT",
+            payoff_profile="N/A",
             counterparty_name="Goldman Sachs",
             counterparty_lei="W22LROWP2IHZNBB6K528",
             put_or_call="Call",
@@ -205,14 +206,14 @@ class TestOptionDerivative:
 
     def test_counterparty(self):
         sec = _build_single(self._option_holding())
-        # Fix 2: counterparties IS the repeating element with direct children
+        # counterparties is the repeating element with direct children.
         cp = sec.find(".//n:counterparties", NS)
         assert cp is not None
         assert cp.find("n:counterpartyName", NS).text == "Goldman Sachs"
         assert cp.find("n:counterpartyLei", NS).text == "W22LROWP2IHZNBB6K528"
 
     def test_deriv_cat_attribute(self):
-        """Fix 1: derivCat must be an XML attribute on the derivative element."""
+        """derivCat is an XML attribute on the derivative element."""
         sec = _build_single(self._option_holding())
         opt = sec.find(".//n:optionSwaptionWarrantDeriv", NS)
         assert opt.get("derivCat") == "OPT"
@@ -240,9 +241,11 @@ class TestSwapDerivative:
     def _swap_holding(self, **extra):
         defaults = dict(
             deriv_cat="SWP",
+            payoff_profile="N/A",
             counterparty_name="JP Morgan",
             counterparty_lei="8I5DZWZKVSZI1NUHU748",
             unrealized_appr="1234.56",
+            swap_flag="N",
             termination_dt="2027-03-31",
             notional_amt="1000000.00",
             swap_cur_cd="USD",
@@ -255,8 +258,10 @@ class TestSwapDerivative:
             rec_floating_rt_spread="0.50",
             rec_pmnt_amt="0",
             rec_cur_cd="USD",
-            rec_rate_tenor="1",
-            rec_rate_unit="Day",
+            rec_rate_tenor="Day",
+            rec_rate_unit="1",
+            rec_reset_dt="Day",
+            rec_reset_unit="1",
             pmnt_fixed_or_floating="Fixed",
             pmnt_fixed_rt="0.05",
             pmnt_pmnt_amt="0",
@@ -278,13 +283,13 @@ class TestSwapDerivative:
         assert swap is not None
 
     def test_deriv_cat_attribute(self):
-        """Fix 1: derivCat attribute on swapDeriv."""
+        """derivCat is an attribute on swapDeriv."""
         sec = _build_single(self._swap_holding())
         swap = sec.find(".//n:swapDeriv", NS)
         assert swap.get("derivCat") == "SWP"
 
     def test_counterparty_structure(self):
-        """Fix 2: counterparties is the repeating element."""
+        """counterparties is the repeating element."""
         sec = _build_single(self._swap_holding())
         cp = sec.find(".//n:counterparties", NS)
         assert cp is not None
@@ -298,7 +303,7 @@ class TestSwapDerivative:
         assert swap.find("n:notionalAmt", NS).text == "1000000.00"
 
     def test_floating_receive_leg_attributes(self):
-        """Fix 3: floating leg uses attributes, not child elements."""
+        """The floating leg uses schema-defined attributes."""
         sec = _build_single(self._swap_holding())
         fl = sec.find(".//n:floatingRecDesc", NS)
         assert fl is not None
@@ -308,15 +313,15 @@ class TestSwapDerivative:
         assert fl.get("curCd") == "USD"
 
     def test_floating_receive_leg_rt_reset_tenor(self):
-        """Fix 4: rtResetTenor uses attributes, not child elements."""
+        """rtResetTenor uses schema-defined attributes."""
         sec = _build_single(self._swap_holding())
         rt = sec.find(".//n:rtResetTenor", NS)
         assert rt is not None
-        assert rt.get("rateTenor") == "1"
-        assert rt.get("rateTenorUnit") == "Day"
+        assert rt.get("rateTenor") == "Day"
+        assert rt.get("rateTenorUnit") == "1"
 
     def test_fixed_pay_leg_attributes(self):
-        """Fix 3: fixed leg uses attributes, not child elements."""
+        """The fixed leg uses schema-defined attributes."""
         sec = _build_single(self._swap_holding())
         fp = sec.find(".//n:fixedPmntDesc", NS)
         assert fp is not None
@@ -325,7 +330,7 @@ class TestSwapDerivative:
         assert fp.get("curCd") == "USD"
 
     def test_swap_element_order(self):
-        """Fix 5: XSD element order for swap."""
+        """Swap children follow XSD element order."""
         sec = _build_single(self._swap_holding())
         swap = sec.find(".//n:swapDeriv", NS)
         children = [c.tag.split("}")[-1] if "}" in c.tag else c.tag for c in swap]
@@ -411,17 +416,28 @@ class TestOtherIdentifier:
 
 
 class TestRiskMetrics:
+    @staticmethod
+    def _payloads():
+        periods = ("3month", "1year", "5year", "10year", "30year")
+        metric = {"curCd": "USD"}
+        metric.update({f"dv01_{period}": "100" for period in periods})
+        metric.update({f"dv100_{period}": "200" for period in periods})
+        spread = {period: "0" for period in periods}
+        return [metric], spread
+
     def test_cur_metrics_emitted(self):
-        """Fix 9: intrstRtRiskdv01 (lowercase d) with period attributes."""
-        metrics = [{"curCd": "USD", "dv01_3month": "100", "dv100_3month": "200"}]
-        f = _filing(cur_metrics_json=json.dumps(metrics))
+        metrics, spread = self._payloads()
+        f = _filing(
+            cur_metrics_json=json.dumps(metrics),
+            credit_sprd_risk_ig_json=json.dumps(spread),
+            credit_sprd_risk_nonig_json=json.dumps(spread),
+        )
         xml = NportBuilder(_config(), f, [_holding()]).to_xml_bytes()
         root = etree.fromstring(xml)
         cm = root.find(".//n:curMetrics", NS)
         assert cm is not None
         cur_metric = cm.find("n:curMetric", NS)
         assert cur_metric.find("n:curCd", NS).text == "USD"
-        # Fix 9: self-closing element with period attributes
         dv01 = cur_metric.find("n:intrstRtRiskdv01", NS)
         assert dv01 is not None
         assert dv01.get("period3Mon") == "100"
@@ -430,12 +446,12 @@ class TestRiskMetrics:
         assert dv100.get("period3Mon") == "200"
 
     def test_credit_spread_ig(self):
-        """Fix 9: period attribute names use XSD format (period3Mon, period1Yr, etc.)."""
-        metrics = [{"curCd": "USD"}]
+        metrics, non_ig = self._payloads()
         ig = {"3month": "10", "1year": "20", "5year": "30", "10year": "40", "30year": "50"}
         f = _filing(
             cur_metrics_json=json.dumps(metrics),
             credit_sprd_risk_ig_json=json.dumps(ig),
+            credit_sprd_risk_nonig_json=json.dumps(non_ig),
         )
         xml = NportBuilder(_config(), f, [_holding()]).to_xml_bytes()
         root = etree.fromstring(xml)
@@ -444,18 +460,19 @@ class TestRiskMetrics:
         assert ig_el.get("period3Mon") == "10"
         assert ig_el.get("period1Yr") == "20"
 
-    def test_credit_spread_always_emitted(self):
-        """Fix 10: both credit spread elements are always emitted with curMetrics."""
-        metrics = [{"curCd": "USD"}]
-        f = _filing(cur_metrics_json=json.dumps(metrics))
+    def test_credit_spreads_are_emitted_from_explicit_inputs(self):
+        metrics, spread = self._payloads()
+        f = _filing(
+            cur_metrics_json=json.dumps(metrics),
+            credit_sprd_risk_ig_json=json.dumps(spread),
+            credit_sprd_risk_nonig_json=json.dumps(spread),
+        )
         xml = NportBuilder(_config(), f, [_holding()]).to_xml_bytes()
         root = etree.fromstring(xml)
-        # Both must be present even without explicit data
         ig_el = root.find(".//n:creditSprdRiskInvstGrade", NS)
         nig_el = root.find(".//n:creditSprdRiskNonInvstGrade", NS)
         assert ig_el is not None
         assert nig_el is not None
-        # Default to "0" for all periods
         assert ig_el.get("period3Mon") == "0"
         assert nig_el.get("period3Mon") == "0"
 
@@ -466,6 +483,41 @@ class TestRiskMetrics:
         assert root.find(".//n:curMetrics", NS) is None
 
 
+# ── Monthly derivative return categories ─────────────────
+
+
+class TestMonthlyReturnCategories:
+    def test_validated_input_months_map_to_instrument_xml_months(self):
+        def month(realized, unrealized):
+            return {
+                "netRealizedGain": realized,
+                "netUnrealizedAppr": unrealized,
+            }
+
+        payload = {
+            "equityContracts": {
+                "mon1": month("1", "2"),
+                "mon2": month("3", "4"),
+                "mon3": month("5", "6"),
+                "optionCategory": {
+                    "mon1": month("7", "8"),
+                    "mon2": month("9", "10"),
+                    "mon3": month("11", "12"),
+                },
+            }
+        }
+        filing = _filing(monthly_return_categories_json=json.dumps(payload))
+
+        xml = NportBuilder(_config(), filing, [_holding()]).to_xml_bytes()
+        root = etree.fromstring(xml)
+
+        contract = root.find(".//n:monthlyReturnCats/n:equityContracts", NS)
+        assert contract.find("n:mon1", NS).get("netRealizedGain") == "1"
+        instrument = contract.find("n:optionCategory", NS)
+        assert instrument.find("n:instrMon1", NS).get("netRealizedGain") == "7"
+        assert instrument.find("n:instrMon3", NS).get("netUnrealizedAppr") == "12"
+
+
 # ── XSD Element Order ─────────────────────────────────────
 
 
@@ -473,7 +525,10 @@ class TestElementOrder:
     """Verify that elements appear in the correct XSD-mandated order."""
 
     def test_holding_order_with_debt(self):
-        h = _holding(maturity_dt="2030-01-01", coupon_kind="Fixed", annualized_rt="3.0")
+        h = _holding(
+            maturity_dt="2030-01-01", coupon_kind="Fixed", annualized_rt="3.0",
+            is_default="N", are_intrst_pmnts_in_arrs="N", is_paid_kind="N",
+        )
         sec = _build_single(h)
         children = [c.tag.split("}")[-1] if "}" in c.tag else c.tag for c in sec]
         # debtSec must come after fairValLevel and before securityLending
@@ -488,10 +543,12 @@ class TestElementOrder:
             counterparty_lei="W22LROWP2IHZNBB6K528",
             put_or_call="Put", written_or_pur="Written",
             share_no="100", exercise_price="50",
+            exercise_price_cur_cd="USD",
             exp_dt="2026-01-01", delta="-0.35",
             unrealized_appr="-100",
             ref_inst_type="otherRefInst",
             ref_issuer_name="Test", ref_issue_title="Test",
+            ref_ticker="TEST",
             cusip="N/A",
         )
         sec = _build_single(h)

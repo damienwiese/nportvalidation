@@ -223,9 +223,9 @@ class TestHoldingValidation:
         errors, _ = validate_holding(_holding(isin="BADFORMAT"), 0)
         assert any("isin" in e for e in errors)
 
-    def test_non_usd_warns(self):
-        _, warnings = validate_holding(_holding(cur_cd="EUR"), 0)
-        assert any("not USD" in w for w in warnings)
+    def test_non_usd_requires_exchange_rate(self):
+        errors, _ = validate_holding(_holding(cur_cd="EUR"), 0)
+        assert any("exchangeRt: required" in error for error in errors)
 
     def test_bad_yn(self):
         errors, _ = validate_holding(_holding(is_restricted_sec="No"), 0)
@@ -244,10 +244,6 @@ class TestHoldingsLevel:
     def test_empty_is_error(self):
         errors, _ = validate_holdings([])
         assert any("No holdings" in e for e in errors)
-
-    def test_pct_sum_warns(self):
-        _, warnings = validate_holdings([_holding(pct_val="5.0")])
-        assert any("pctVal sum" in w for w in warnings)
 
     def test_duplicate_cusip_warns(self):
         _, warnings = validate_holdings([_holding(), _holding(name="Dup")])

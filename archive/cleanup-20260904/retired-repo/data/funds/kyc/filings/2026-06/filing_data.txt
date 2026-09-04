@@ -1,0 +1,57 @@
+# KYC 2026-06 filing data
+# rtn1-3 from Bloomberg; net/total assets from custodian; gains/flows from fund accounting.
+
+# Submission
+submissionType=NPORT-P
+liveTestFlag=TEST
+repPdEnd=2026-06-30
+repPdDate=2026-06-30
+isFinalFiling=N
+dateSigned=2026-07-31
+
+# Fund Financials
+totAssets=1412356.94
+totLiabs=323.40
+netAssets=1412033.54
+
+# Balance Sheet Items
+assetsAttrMiscSec=0
+assetsInvested=0
+amtPayOneYrBanksBorr=0
+amtPayOneYrCtrldComp=0
+amtPayOneYrOthAffil=0
+amtPayOneYrOther=323.40
+amtPayAftOneYrBanksBorr=0
+amtPayAftOneYrCtrldComp=0
+amtPayAftOneYrOthAffil=0
+amtPayAftOneYrOther=0
+delayDeliv=0
+standByCommit=0
+liquidPref=0
+isNonCashCollateral=N
+
+# Returns (rtn1-3 from Bloomberg; gains from fund accounting)
+rtn1=N/A
+rtn2=-0.17
+rtn3=-2.46
+netRealizedGainMon1=0.00
+netUnrealizedApprMon1=0.00
+netRealizedGainMon2=0.00
+netUnrealizedApprMon2=-351.44
+netRealizedGainMon3=0.00
+netUnrealizedApprMon3=-67945.92
+
+# Flows (from transfer agent / fund accounting)
+mon1Sales=125000.00
+mon1Redemption=0.00
+mon1Reinvestment=N/A
+mon2Sales=1353468.00
+mon2Redemption=0.00
+mon2Reinvestment=N/A
+mon3Sales=0.00
+mon3Redemption=0.00
+mon3Reinvestment=N/A
+
+# Designated Index
+nameDesignatedIndex=S&P 500 Index
+indexIdentifier=SPX

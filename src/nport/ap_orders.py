@@ -2,9 +2,9 @@
 
 The issuer's authorized-participant order export (one row per CREATE/REDEEM order)
 can calculate N-PORT-shaped Part B.2 gross flows: ``monXSales`` = value of shares sold
-(creations), ``monXRedemption`` = value of shares redeemed. In the current ``masters``
-pipeline these calculations are reconciliation-only: EagleSTAR Trial Balance flows
-write the filing, and the order values are compared with them in the reconciliation
+(creations), ``monXRedemption`` = value of shares redeemed. In the supported review
+pipeline these calculations are reconciliation-only: independently supplied accounting
+flows write the filing, and the order values are compared with them in the reconciliation
 report. ``Notional`` is the per-order dollar value (in-kind and cash alike).
 Reinvestment (DRIP) is not in an order book.
 
@@ -14,15 +14,15 @@ Aggregation is deterministic: sum ``Notional`` by fund × reporting month × sid
 """
 import csv
 from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
-
-from nport.numbers import fnum as _fnum
 
 # Reporting-period month order: mon1 earliest … mon3 = the report month.
 _FLOW_MONTHS = ("mon1", "mon2", "mon3")
 
 
-@dataclass
+@dataclass(frozen=True)
 class ApOrder:
     ticker: str
     side: str          # CREATE / REDEEM
@@ -33,19 +33,22 @@ class ApOrder:
 
 def _year_month(trade_date: str) -> str | None:
     """'M/D/YYYY' -> 'YYYY-MM' (None if unparseable)."""
-    parts = (trade_date or "").split("/")
-    if len(parts) != 3:
-        return None
     try:
-        m, _d, y = (int(p) for p in parts)
+        parsed = datetime.strptime((trade_date or "").strip(), "%m/%d/%Y")
     except ValueError:
         return None
-    return f"{y:04d}-{m:02d}"
+    return parsed.strftime("%Y-%m")
 
 
 def _period_months(period: str) -> list[str]:
     """The 3 reporting-period months as 'YYYY-MM', chronological (mon1 … mon3)."""
-    y, m = int(period[:4]), int(period[5:7])
+    try:
+        parsed = datetime.strptime(period, "%Y-%m")
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"period must be YYYY-MM, got {period!r}") from exc
+    if parsed.strftime("%Y-%m") != period:
+        raise ValueError(f"period must be YYYY-MM, got {period!r}")
+    y, m = parsed.year, parsed.month
     out: list[str] = []
     for back in (2, 1, 0):
         yy, mm = y, m - back
@@ -60,6 +63,17 @@ def parse_ap_orders(path: Path) -> list[ApOrder]:
     """Read the AP order book CSV into ApOrder rows (header-named columns)."""
     with open(path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
+        required = {"Ticker", "Side", "Trade Date", "Notional", "Status"}
+        headers = reader.fieldnames or []
+        missing = sorted(required - set(headers))
+        duplicates = sorted({value for value in headers if value and headers.count(value) > 1})
+        if missing or duplicates:
+            detail = []
+            if missing:
+                detail.append("missing columns: " + ", ".join(missing))
+            if duplicates:
+                detail.append("duplicate columns: " + ", ".join(duplicates))
+            raise ValueError(f"{path}: invalid order header ({'; '.join(detail)})")
         return [
             ApOrder(
                 ticker=(r.get("Ticker") or "").strip(),
@@ -77,33 +91,59 @@ def aggregate_flows(orders: list[ApOrder], period: str) -> dict[str, dict[str, s
 
     Returns ``{TICKER: {mon1Sales, mon1Redemption, ... mon3Reinvestment}}`` with
     2dp string dollar values; months/funds with no activity are "0". CREATE → Sales,
-    REDEEM → Redemption. Reinvestment is always "0" (no feed in an order book).
+    REDEEM → Redemption. Reinvestment is "N/A" because an order book cannot supply it.
     """
     months = _period_months(period)          # ['YYYY-MM' (mon1) … (mon3)]
     month_idx = {ym: _FLOW_MONTHS[i] for i, ym in enumerate(months)}
 
-    sums: dict[str, dict[str, float]] = {}
-    for o in orders:
+    sums: dict[str, dict[str, Decimal]] = {}
+    for row_number, o in enumerate(orders, 2):
+        if o.status not in {"ACCEPTED", "CANCELLED"}:
+            raise ValueError(
+                f"orders row {row_number}: Status must be ACCEPTED or CANCELLED"
+            )
         if o.status != "ACCEPTED":
             continue
-        mon = month_idx.get(_year_month(o.trade_date))
+        if not o.ticker.strip():
+            raise ValueError(f"orders row {row_number}: accepted order has no ticker")
+        year_month = _year_month(o.trade_date)
+        if year_month is None:
+            raise ValueError(
+                f"orders row {row_number}: Trade Date must be a real M/D/YYYY date"
+            )
+        if o.side == "CREATE":
+            suffix = "Sales"
+        elif o.side == "REDEEM":
+            suffix = "Redemption"
+        else:
+            raise ValueError(
+                f"orders row {row_number}: accepted Side must be CREATE or REDEEM"
+            )
+        try:
+            amount = Decimal(o.notional.replace(",", "").strip())
+        except (AttributeError, InvalidOperation) as exc:
+            raise ValueError(
+                f"orders row {row_number}: Notional must be numeric"
+            ) from exc
+        if not amount.is_finite() or amount < 0:
+            raise ValueError(
+                f"orders row {row_number}: Notional must be a finite non-negative number"
+            )
+        mon = month_idx.get(year_month)
         if mon is None:
             continue
-        if o.side == "CREATE":
-            field = f"{mon}Sales"
-        elif o.side == "REDEEM":
-            field = f"{mon}Redemption"
-        else:
-            continue
+        field = f"{mon}{suffix}"
         sums.setdefault(o.ticker.upper(), {})
-        sums[o.ticker.upper()][field] = sums[o.ticker.upper()].get(field, 0.0) + _fnum(o.notional)
+        sums[o.ticker.upper()][field] = (
+            sums[o.ticker.upper()].get(field, Decimal("0")) + amount
+        )
 
     out: dict[str, dict[str, str]] = {}
     for ticker, fld in sums.items():
         rec: dict[str, str] = {}
         for mon in _FLOW_MONTHS:
-            rec[f"{mon}Sales"] = f"{fld.get(f'{mon}Sales', 0.0):.2f}"
-            rec[f"{mon}Redemption"] = f"{fld.get(f'{mon}Redemption', 0.0):.2f}"
+            rec[f"{mon}Sales"] = f"{fld.get(f'{mon}Sales', Decimal('0')):.2f}"
+            rec[f"{mon}Redemption"] = f"{fld.get(f'{mon}Redemption', Decimal('0')):.2f}"
             rec[f"{mon}Reinvestment"] = "N/A"   # reinvested distributions: no feed in an order book
         out[ticker] = rec
     return out

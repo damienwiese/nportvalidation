@@ -1,9 +1,14 @@
-"""Data models for N-PORT filing inputs."""
+"""Canonical in-memory records consumed by the N-PORT XML builder.
+
+Values remain strings deliberately: the canonical bundle preserves the SEC XML
+lexical representation exactly.  ``input_validation`` owns type, format, and
+cross-field checks before any model is released to the builder.
+"""
 
 from dataclasses import dataclass
 
 
-@dataclass
+@dataclass(frozen=True, kw_only=True)
 class FundConfig:
     """Static per-fund data that rarely changes."""
     cik: str
@@ -13,7 +18,7 @@ class FundConfig:
     reg_cik: str
     reg_lei: str
     reg_street1: str
-    reg_street2: str
+    reg_street2: str = ""
     reg_city: str
     reg_state: str
     reg_country: str
@@ -26,8 +31,9 @@ class FundConfig:
     signer_org: str
     signer_name: str
     signer_title: str
-    # Internally approved filing policy. Optional while legacy/test fixtures are
-    # migrated; the fund-level review workflow requires every value below.
+    # Approved filing policy. Blank defaults let ``prepare`` turn an incomplete
+    # static file into explicit workbook gaps; the production release gate then
+    # requires the applicable values.
     fiscal_year_end_mmdd: str = ""
     derivatives_regime_policy: str = ""
     liquidity_required: str = ""
@@ -40,7 +46,7 @@ class FundConfig:
     required_sources: str = ""
 
 
-@dataclass
+@dataclass(frozen=True, kw_only=True)
 class FilingData:
     """Per-filing data that changes monthly."""
     submission_type: str
@@ -109,7 +115,7 @@ class FilingData:
     backtesting_exceptions: str = ""
 
 
-@dataclass
+@dataclass(frozen=True, kw_only=True)
 class Holding:
     """One portfolio holding (one row from holdings CSV)."""
     name: str

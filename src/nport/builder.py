@@ -11,6 +11,7 @@ from lxml import etree
 from lxml.etree import SubElement
 
 from nport.constants import NS_NPORT, NS_NPORTCOMMON, NSMAP
+from nport.input_validation import validate_for_serialization
 from nport.models import FilingData, FundConfig, Holding
 
 
@@ -27,6 +28,9 @@ class NportBuilder:
 
     def build(self) -> etree._Element:
         """Build the complete edgarSubmission element tree."""
+        errors = validate_for_serialization(self.config, self.filing, self.holdings)
+        if errors:
+            raise ValueError("canonical model is not serializable: " + "; ".join(errors))
         root = etree.Element(f"{{{NS_NPORT}}}edgarSubmission", nsmap=NSMAP)
         self._build_header(root)
         form = SubElement(root, "formData")
@@ -59,8 +63,7 @@ class NportBuilder:
 
         # liveTestFlag is the first child of filerInfo per the schema. Emit only
         # for TEST submissions; EDGAR treats an omitted element as LIVE, which
-        # matches how production filings (e.g. our FDRS Dec 2025 reference) are
-        # submitted. This makes accidental live submission a deliberate choice.
+        # makes a live artifact an explicit input decision.
         if self.filing.live_test_flag == "TEST":
             SubElement(filer_info, "liveTestFlag").text = "TEST"
         elif self.filing.live_test_flag != "LIVE":
@@ -222,8 +225,7 @@ class NportBuilder:
             SubElement(de, "derivIntRateExposurePct").text = f.deriv_interest_rate_exposure_pct
             SubElement(de, "noOfBusinessDaysInExcess").text = f.deriv_days_in_excess
 
-        # B.10 is all-or-nothing. The former partial element was invalid XML
-        # and the validator incorrectly suppressed the resulting error.
+        # B.10 is emitted as one complete conditional section.
         if f.median_daily_var_pct:
             var_info = SubElement(fi, "varInfo")
             SubElement(var_info, "medianDailyVarPct").text = f.median_daily_var_pct
@@ -263,8 +265,12 @@ class NportBuilder:
                     f"B.5.c {contract} requires exactly one instrument category; got {instruments}"
                 )
             instrument = SubElement(node, instruments[0])
-            for month in ("instrMon1", "instrMon2", "instrMon3"):
-                self._add_monthly_gain(instrument, month, values[instruments[0]].get(month))
+            for month_number in (1, 2, 3):
+                input_key = f"mon{month_number}"
+                xml_name = f"instrMon{month_number}"
+                self._add_monthly_gain(
+                    instrument, xml_name, values[instruments[0]].get(input_key)
+                )
 
     @staticmethod
     def _add_monthly_gain(parent: etree._Element, name: str, value: dict | None) -> None:
@@ -293,24 +299,24 @@ class NportBuilder:
             SubElement(cm, "curCd").text = m["curCd"]
             # intrstRtRiskdv01 — self-closing with period attributes
             SubElement(cm, "intrstRtRiskdv01", attrib={
-                p: m.get(f"dv01_{k}", "0")
+                p: str(m[f"dv01_{k}"])
                 for p, k in zip(self._RISK_PERIODS, self._RISK_PERIOD_KEYS)
             })
             # intrstRtRiskdv100 — self-closing with period attributes
             SubElement(cm, "intrstRtRiskdv100", attrib={
-                p: m.get(f"dv100_{k}", "0")
+                p: str(m[f"dv100_{k}"])
                 for p, k in zip(self._RISK_PERIODS, self._RISK_PERIOD_KEYS)
             })
 
         # Both credit spread elements are REQUIRED when curMetrics is present
-        ig = json.loads(f.credit_sprd_risk_ig_json) if f.credit_sprd_risk_ig_json else {}
+        ig = json.loads(f.credit_sprd_risk_ig_json)
         SubElement(fi, "creditSprdRiskInvstGrade", attrib={
-            p: ig.get(k, "0")
+            p: str(ig[k])
             for p, k in zip(self._RISK_PERIODS, self._RISK_PERIOD_KEYS)
         })
-        nig = json.loads(f.credit_sprd_risk_nonig_json) if f.credit_sprd_risk_nonig_json else {}
+        nig = json.loads(f.credit_sprd_risk_nonig_json)
         SubElement(fi, "creditSprdRiskNonInvstGrade", attrib={
-            p: nig.get(k, "0")
+            p: str(nig[k])
             for p, k in zip(self._RISK_PERIODS, self._RISK_PERIOD_KEYS)
         })
 
@@ -363,8 +369,8 @@ class NportBuilder:
 
         SubElement(sec, "valUSD").text = h.val_usd
         SubElement(sec, "pctVal").text = h.pct_val
-        # Form N-PORT C.3 directs derivative holdings to answer N/A; their
-        # economic payoff is reported in C.11.
+        # Form N-PORT C.3 requires N/A for a derivative held as an investment;
+        # the economic direction is reported in the applicable C.11 branch.
         SubElement(sec, "payoffProfile").text = "N/A" if h.deriv_cat else h.payoff_profile
 
         # Asset category: assetConditional or assetCat
@@ -440,10 +446,9 @@ class NportBuilder:
         SubElement(ds, "maturityDt").text = h.maturity_dt
         SubElement(ds, "couponKind").text = h.coupon_kind
         SubElement(ds, "annualizedRt").text = h.annualized_rt
-        # XSD requires all three flags (minOccurs=1); default to "N"
-        SubElement(ds, "isDefault").text = h.is_default or "N"
-        SubElement(ds, "areIntrstPmntsInArrs").text = h.are_intrst_pmnts_in_arrs or "N"
-        SubElement(ds, "isPaidKind").text = h.is_paid_kind or "N"
+        SubElement(ds, "isDefault").text = h.is_default
+        SubElement(ds, "areIntrstPmntsInArrs").text = h.are_intrst_pmnts_in_arrs
+        SubElement(ds, "isPaidKind").text = h.is_paid_kind
 
     # ── Derivative Info (C.11) ─────────────────────────────
 
@@ -460,92 +465,75 @@ class NportBuilder:
             self._build_other_deriv(di, h)
 
     def _build_option_deriv(self, di: etree._Element, h: Holding) -> None:
-        # Fix 1: derivCat attribute
         opt = SubElement(di, "optionSwaptionWarrantDeriv", attrib={"derivCat": h.deriv_cat})
-        # Fix 2: counterparties is the repeating element with direct children
         self._add_counterparty(opt, h)
         SubElement(opt, "putOrCall").text = h.put_or_call
         SubElement(opt, "writtenOrPur").text = h.written_or_pur
 
         # Reference instrument
-        if h.ref_inst_type:
-            self._build_ref_instrument(opt, h)
+        self._build_ref_instrument(opt, h)
 
         SubElement(opt, "shareNo").text = h.share_no
         SubElement(opt, "exercisePrice").text = h.exercise_price
-        SubElement(opt, "exercisePriceCurCd").text = h.exercise_price_cur_cd or h.cur_cd
+        SubElement(opt, "exercisePriceCurCd").text = h.exercise_price_cur_cd
         SubElement(opt, "expDt").text = h.exp_dt
         SubElement(opt, "delta").text = h.delta
         SubElement(opt, "unrealizedAppr").text = h.unrealized_appr
 
     def _build_swap_deriv(self, di: etree._Element, h: Holding) -> None:
-        # Fix 1: derivCat attribute
         swap = SubElement(di, "swapDeriv", attrib={"derivCat": "SWP"})
-        # Fix 2: counterparties structure
         self._add_counterparty(swap, h)
 
-        # Fix 5: XSD order — descRefInstrmnt before swapFlag
+        # XSD order requires the reference instrument before swapFlag.
         if h.ref_inst_type:
             self._build_ref_instrument(swap, h)
 
-        SubElement(swap, "swapFlag").text = h.swap_flag or "N"
+        SubElement(swap, "swapFlag").text = h.swap_flag
 
-        # Fix 5: receive leg, then pay leg, then termination/notional
         self._build_swap_legs(swap, h)
 
         SubElement(swap, "terminationDt").text = h.termination_dt
-        SubElement(swap, "upfrontPmnt").text = h.upfront_pmnt or "0"
-        SubElement(swap, "pmntCurCd").text = h.pmnt_cur_cd or h.cur_cd
-        SubElement(swap, "upfrontRcpt").text = h.upfront_rcpt or "0"
-        SubElement(swap, "rcptCurCd").text = h.rcpt_cur_cd or h.cur_cd
+        SubElement(swap, "upfrontPmnt").text = h.upfront_pmnt
+        SubElement(swap, "pmntCurCd").text = h.pmnt_cur_cd
+        SubElement(swap, "upfrontRcpt").text = h.upfront_rcpt
+        SubElement(swap, "rcptCurCd").text = h.rcpt_cur_cd
         SubElement(swap, "notionalAmt").text = h.notional_amt
-        SubElement(swap, "curCd").text = h.swap_cur_cd or h.cur_cd
+        SubElement(swap, "curCd").text = h.swap_cur_cd
         SubElement(swap, "unrealizedAppr").text = h.unrealized_appr
 
     def _build_fwd_fut_deriv(self, di: etree._Element, h: Holding) -> None:
-        # Fix 6: correct element names; Fix 1: derivCat attribute
         if h.deriv_cat == "FWD":
             ff = SubElement(di, "fwdDeriv", attrib={"derivCat": "FWD"})
         else:
             ff = SubElement(di, "futrDeriv", attrib={"derivCat": "FUT"})
-        # Fix 2: counterparties structure
         self._add_counterparty(ff, h)
-        # Fix 6: payOffProf before descRefInstrmnt
-        if h.payoff_prof_deriv:
-            SubElement(ff, "payOffProf").text = h.payoff_prof_deriv
+        SubElement(ff, "payOffProf").text = h.payoff_prof_deriv
         if h.ref_inst_type:
             self._build_ref_instrument(ff, h)
-        # Fix 6: expDate not expDt
-        if h.exp_dt:
-            SubElement(ff, "expDate").text = h.exp_dt
-        if h.notional_amt:
-            SubElement(ff, "notionalAmt").text = h.notional_amt
-            SubElement(ff, "curCd").text = h.swap_cur_cd or h.cur_cd
+        SubElement(ff, "expDate").text = h.exp_dt
+        SubElement(ff, "notionalAmt").text = h.notional_amt
+        SubElement(ff, "curCd").text = h.swap_cur_cd
         SubElement(ff, "unrealizedAppr").text = h.unrealized_appr
 
     def _build_other_deriv(self, di: etree._Element, h: Holding) -> None:
-        # Fix 1 + 13: derivCat="OTH" + othDesc attribute
         oth = SubElement(di, "othDeriv", attrib={
             "derivCat": "OTH",
-            "othDesc": h.other_deriv_desc or "Other",
+            "othDesc": h.other_deriv_desc,
         })
-        # Fix 2: counterparties structure
         self._add_counterparty(oth, h)
         if h.ref_inst_type:
             self._build_ref_instrument(oth, h)
-        if h.termination_dt:
-            SubElement(oth, "terminationDt").text = h.termination_dt
-        # Fix 13: notionalAmts wrapper with notionalAmt using attributes
-        if h.notional_amt:
-            na_wrapper = SubElement(oth, "notionalAmts")
-            SubElement(na_wrapper, "notionalAmt", attrib={
-                "amt": h.notional_amt,
-                "curCd": h.swap_cur_cd or h.cur_cd,
-            })
+        SubElement(oth, "terminationDt").text = h.termination_dt
+        na_wrapper = SubElement(oth, "notionalAmts")
+        SubElement(na_wrapper, "notionalAmt", attrib={
+            "amt": h.notional_amt,
+            "curCd": h.swap_cur_cd,
+        })
+        SubElement(oth, "delta").text = h.delta
         SubElement(oth, "unrealizedAppr").text = h.unrealized_appr
 
     def _add_counterparty(self, parent: etree._Element, h: Holding) -> None:
-        """Fix 2: counterparties IS the repeating element with direct children."""
+        """Emit one counterparty record for the canonical single-counterparty model."""
         cp = SubElement(parent, "counterparties")
         SubElement(cp, "counterpartyName").text = h.counterparty_name
         SubElement(cp, "counterpartyLei").text = h.counterparty_lei
@@ -579,27 +567,25 @@ class NportBuilder:
             SubElement(swap, "fixedRecDesc", attrib={
                 "fixedOrFloating": "Fixed",
                 "fixedRt": h.rec_fixed_rt,
-                "curCd": h.rec_cur_cd or h.cur_cd,
-                "amount": h.rec_pmnt_amt or "0",
+                "curCd": h.rec_cur_cd,
+                "amount": h.rec_pmnt_amt,
             })
         elif h.rec_fixed_or_floating == "Floating":
             fl = SubElement(swap, "floatingRecDesc", attrib={
                 "fixedOrFloating": "Floating",
                 "floatingRtIndex": h.rec_floating_rt_index,
                 "floatingRtSpread": h.rec_floating_rt_spread,
-                "curCd": h.rec_cur_cd or h.cur_cd,
-                "pmntAmt": h.rec_pmnt_amt or "0",
+                "curCd": h.rec_cur_cd,
+                "pmntAmt": h.rec_pmnt_amt,
             })
-            if h.rec_rate_tenor:
-                tenors = SubElement(fl, "rtResetTenors")
-                SubElement(tenors, "rtResetTenor", attrib={
-                    "rateTenor": h.rec_rate_tenor,
-                    "rateTenorUnit": h.rec_rate_unit,
-                    "resetDt": h.rec_reset_dt or h.rec_rate_tenor,
-                    "resetDtUnit": h.rec_reset_unit or h.rec_rate_unit,
-                })
+            tenors = SubElement(fl, "rtResetTenors")
+            SubElement(tenors, "rtResetTenor", attrib={
+                "rateTenor": h.rec_rate_tenor,
+                "rateTenorUnit": h.rec_rate_unit,
+                "resetDt": h.rec_reset_dt,
+                "resetDtUnit": h.rec_reset_unit,
+            })
         elif h.rec_fixed_or_floating == "Other":
-            # Fix 11: fixedOrFloating="Other" attribute
             SubElement(swap, "otherRecDesc", attrib={
                 "fixedOrFloating": "Other",
             }).text = h.rec_desc
@@ -609,25 +595,24 @@ class NportBuilder:
             SubElement(swap, "fixedPmntDesc", attrib={
                 "fixedOrFloating": "Fixed",
                 "fixedRt": h.pmnt_fixed_rt,
-                "curCd": h.pmnt_cur_cd_leg or h.cur_cd,
-                "amount": h.pmnt_pmnt_amt or "0",
+                "curCd": h.pmnt_cur_cd_leg,
+                "amount": h.pmnt_pmnt_amt,
             })
         elif h.pmnt_fixed_or_floating == "Floating":
             flp = SubElement(swap, "floatingPmntDesc", attrib={
                 "fixedOrFloating": "Floating",
                 "floatingRtIndex": h.pmnt_floating_rt_index,
                 "floatingRtSpread": h.pmnt_floating_rt_spread,
-                "curCd": h.pmnt_cur_cd_leg or h.cur_cd,
-                "pmntAmt": h.pmnt_pmnt_amt or "0",
+                "curCd": h.pmnt_cur_cd_leg,
+                "pmntAmt": h.pmnt_pmnt_amt,
             })
-            if h.pmnt_rate_tenor:
-                tenors = SubElement(flp, "rtResetTenors")
-                SubElement(tenors, "rtResetTenor", attrib={
-                    "rateTenor": h.pmnt_rate_tenor,
-                    "rateTenorUnit": h.pmnt_rate_unit,
-                    "resetDt": h.pmnt_reset_dt or h.pmnt_rate_tenor,
-                    "resetDtUnit": h.pmnt_reset_unit or h.pmnt_rate_unit,
-                })
+            tenors = SubElement(flp, "rtResetTenors")
+            SubElement(tenors, "rtResetTenor", attrib={
+                "rateTenor": h.pmnt_rate_tenor,
+                "rateTenorUnit": h.pmnt_rate_unit,
+                "resetDt": h.pmnt_reset_dt,
+                "resetDtUnit": h.pmnt_reset_unit,
+            })
         elif h.pmnt_fixed_or_floating == "Other":
             SubElement(swap, "otherPmntDesc", attrib={
                 "fixedOrFloating": "Other",

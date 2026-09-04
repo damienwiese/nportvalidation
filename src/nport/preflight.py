@@ -5,31 +5,15 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import os
+import tempfile
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
 
 from nport.models import FilingData, Holding
 from nport.policy import FilingContext
-
-
-_PROHIBITED_SOURCE_TOKENS = (
-    "us bank", "u.s. bank", "usbank", "eaglestar",
-    "data/custodian", "data\\custodian", "data/fund_accounting",
-    "data\\fund_accounting", "takeout", "nportimplementation",
-    "n-port comparison", "nport comparison", "administrator reference",
-    "reference filing", "filing comparison", "prepared n-port",
-    "telegram desktop", "support_final", "consolidated reports_final",
-    "fwdcorgitrust", "founder-led 2x daily etf", "corgi 4.30.2026",
-    "data/master", "data\\master", "data/funds", "data\\funds",
-    "data/humanreview", "data\\humanreview", "output/", "output\\",
-)
-
-
-def _is_prohibited_source(*values: str) -> bool:
-    """Identify U.S. Bank-delivered and administrator/reference inputs."""
-    source = " | ".join(values).strip().lower()
-    return any(token in source for token in _PROHIBITED_SOURCE_TOKENS)
+from nport.source_policy import is_prohibited_source
 
 
 @dataclass(frozen=True)
@@ -70,9 +54,9 @@ def load_source_manifest(path: str | Path) -> dict[str, SourceEvidence]:
             raise ValueError(f"{manifest}: missing source-manifest columns {sorted(missing)}")
         for rownum, row in enumerate(reader, 2):
             source = row["source_system"]
-            if _is_prohibited_source(row["dataset"], source, row["source_path"]):
+            if is_prohibited_source(row["dataset"], source, row["source_path"]):
                 raise ValueError(
-                    f"{manifest}:{rownum}: U.S. Bank/admin comparison data cannot feed the "
+                    f"{manifest}:{rownum}: prohibited custody/prepared-filing data cannot feed the "
                     "in-house pipeline (dataset, source_system, and source_path are all checked)"
                 )
             dataset = row["dataset"].strip()
@@ -218,7 +202,7 @@ def write_release_manifest(
         "period": period,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "policy": {
-            "registry": str(context.policy.source_ref),
+            "source_ref": str(context.policy.source_ref),
             "fiscal_year_end": context.fiscal_year_end.isoformat(),
             "submission_type": context.submission_type,
             "derivatives_regime": context.policy.derivatives_regime,
@@ -237,4 +221,14 @@ def write_release_manifest(
         ),
     }
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    if destination.exists():
+        raise FileExistsError(f"refusing to overwrite existing release manifest: {destination}")
+    fd, temporary_name = tempfile.mkstemp(dir=destination.parent, suffix=".manifest.tmp")
+    os.close(fd)
+    temporary = Path(temporary_name)
+    try:
+        temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        temporary.replace(destination)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise

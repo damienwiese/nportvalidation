@@ -1,13 +1,14 @@
 """Parsers for key=value txt files and CSV holdings files."""
 
 import csv
-import warnings
+from dataclasses import MISSING, fields
 from pathlib import Path
+from typing import Any
 
 from nport.models import FilingData, FundConfig, Holding
 
 # Key name in txt file -> dataclass field name
-_CONFIG_KEY_MAP = {
+CONFIG_KEY_MAP = {
     "cik": "cik", "ccc": "ccc",
     "regName": "reg_name", "regFileNumber": "reg_file_number",
     "regCik": "reg_cik", "regLei": "reg_lei",
@@ -31,7 +32,7 @@ _CONFIG_KEY_MAP = {
     "requiredSources": "required_sources",
 }
 
-_FILING_KEY_MAP = {
+FILING_KEY_MAP = {
     "submissionType": "submission_type",
     "liveTestFlag": "live_test_flag",
     "repPdEnd": "rep_pd_end", "repPdDate": "rep_pd_date",
@@ -82,7 +83,7 @@ _FILING_KEY_MAP = {
     "backtestingExceptions": "backtesting_exceptions",
 }
 
-_HOLDINGS_KEY_MAP = {
+HOLDINGS_KEY_MAP = {
     "name": "name", "lei": "lei", "title": "title",
     "cusip": "cusip", "isin": "isin", "ticker": "ticker",
     "balance": "balance", "units": "units", "curCd": "cur_cd",
@@ -171,42 +172,22 @@ _HOLDINGS_KEY_MAP = {
     "liquidityCircumstancesJson": "liquidity_circumstances_json",
 }
 
-_OPTIONAL_HOLDINGS_KEYS = {
-    "issuer_conditional_desc", "asset_conditional_desc",
-    "other_desc", "other_value", "exchange_rt",
-    "maturity_dt", "coupon_kind", "annualized_rt",
-    "is_default", "are_intrst_pmnts_in_arrs", "is_paid_kind",
-    "deriv_cat", "counterparty_name", "counterparty_lei", "unrealized_appr",
-    "put_or_call", "written_or_pur", "share_no",
-    "exercise_price", "exercise_price_cur_cd", "exp_dt", "delta",
-    "ref_inst_type", "ref_index_name", "ref_index_identifier",
-    "ref_issuer_name", "ref_issue_title", "ref_cusip", "ref_isin", "ref_ticker",
-    "swap_flag", "termination_dt", "upfront_pmnt", "pmnt_cur_cd",
-    "upfront_rcpt", "rcpt_cur_cd", "notional_amt", "swap_cur_cd",
-    "rec_fixed_or_floating", "rec_fixed_rt", "rec_floating_rt_index",
-    "rec_floating_rt_spread", "rec_pmnt_amt", "rec_cur_cd",
-    "rec_rate_tenor", "rec_rate_unit", "rec_reset_dt", "rec_reset_unit", "rec_desc", "pmnt_desc",
-    "pmnt_fixed_or_floating", "pmnt_fixed_rt", "pmnt_floating_rt_index",
-    "pmnt_floating_rt_spread", "pmnt_pmnt_amt", "pmnt_cur_cd_leg",
-    "pmnt_rate_tenor", "pmnt_rate_unit", "pmnt_reset_dt", "pmnt_reset_unit",
-    "payoff_prof_deriv", "other_deriv_desc",
-    "liquidity_classification_json", "liquidity_circumstances_json",
-}
+def optional_model_fields(model_type: type[Any]) -> frozenset[str]:
+    """Return fields that the dataclass itself declares optional.
 
-_OPTIONAL_FILING_KEYS = {
-    "cur_metrics_json", "credit_sprd_risk_ig_json", "credit_sprd_risk_nonig_json",
-    "cash_not_reported_in_c_or_d", "monthly_return_categories_json",
-    "derivatives_regime", "deriv_exposure_pct", "deriv_currency_exposure_pct",
-    "deriv_interest_rate_exposure_pct", "deriv_days_in_excess",
-    "median_daily_var_pct", "median_var_ratio_pct", "backtesting_exceptions",
-}
+    Parser optionality is derived from the canonical model so it cannot drift
+    into a second, independently maintained schema.
+    """
+    return frozenset(
+        field.name
+        for field in fields(model_type)
+        if field.default is not MISSING or field.default_factory is not MISSING
+    )
 
-_OPTIONAL_CONFIG_KEYS = {
-    "reg_street2", "fiscal_year_end_mmdd", "derivatives_regime_policy",
-    "liquidity_required", "cash_b2f_required", "policy_effective_from",
-    "policy_effective_to", "policy_approved_by", "policy_approved_at",
-    "policy_source_ref", "required_sources",
-}
+
+OPTIONAL_HOLDING_FIELDS = optional_model_fields(Holding)
+OPTIONAL_FILING_FIELDS = optional_model_fields(FilingData)
+OPTIONAL_CONFIG_FIELDS = optional_model_fields(FundConfig)
 
 
 def _parse_kv_file(path: Path) -> dict[str, str]:
@@ -220,32 +201,78 @@ def _parse_kv_file(path: Path) -> dict[str, str]:
             if "=" not in line:
                 raise ValueError(f"{path}:{lineno}: expected key=value, got: {line!r}")
             key, _, value = line.partition("=")
-            data[key.strip()] = value.strip()
+            key = key.strip()
+            if not key:
+                raise ValueError(f"{path}:{lineno}: key must not be empty.")
+            if key in data:
+                raise ValueError(f"{path}:{lineno}: duplicate key {key!r}.")
+            data[key] = value.strip()
     return data
 
 
-def _map_keys(raw: dict, key_map: dict, path: Path, optional: set | None = None) -> dict:
+def _map_keys(
+    raw: dict[str, str], key_map: dict[str, str], source: str | Path,
+    optional: frozenset[str] = frozenset(), *,
+    reject_unknown: bool = False,
+) -> dict[str, str]:
     """Map txt/csv keys to dataclass field names, raising on missing required keys."""
-    optional = optional or set()
-    kwargs = {}
+    if reject_unknown:
+        unknown = sorted(set(raw) - set(key_map))
+        if unknown:
+            raise ValueError(f"{source}: unknown key(s): {', '.join(unknown)}.")
+    kwargs: dict[str, str] = {}
     for txt_key, field_name in key_map.items():
         if txt_key not in raw:
             if field_name in optional:
                 kwargs[field_name] = ""
                 continue
-            raise ValueError(f"{path}: missing required key '{txt_key}'.")
-        kwargs[field_name] = raw[txt_key]
+            raise ValueError(f"{source}: missing required key '{txt_key}'.")
+        kwargs[field_name] = (raw[txt_key] or "").strip()
     return kwargs
 
 
 def parse_config(path: str | Path) -> FundConfig:
     path = Path(path)
-    return FundConfig(**_map_keys(_parse_kv_file(path), _CONFIG_KEY_MAP, path, _OPTIONAL_CONFIG_KEYS))
+    return FundConfig(**_map_keys(
+        _parse_kv_file(path), CONFIG_KEY_MAP, path, OPTIONAL_CONFIG_FIELDS,
+        reject_unknown=True,
+    ))
 
 
 def parse_filing(path: str | Path) -> FilingData:
     path = Path(path)
-    return FilingData(**_map_keys(_parse_kv_file(path), _FILING_KEY_MAP, path, _OPTIONAL_FILING_KEYS))
+    return FilingData(**_map_keys(
+        _parse_kv_file(path), FILING_KEY_MAP, path, OPTIONAL_FILING_FIELDS,
+        reject_unknown=True,
+    ))
+
+
+def _validate_csv_headers(
+    reader: csv.DictReader, path: Path, *, allowed: set[str] | None = None,
+    required: set[str] | None = None,
+) -> list[str]:
+    headers = reader.fieldnames or []
+    duplicates = sorted({value for value in headers if value and headers.count(value) > 1})
+    unknown = sorted(set(headers) - allowed) if allowed is not None else []
+    missing = sorted(required - set(headers)) if required is not None else []
+    problems = []
+    if not headers or any(not value for value in headers):
+        problems.append("blank or missing column name")
+    if duplicates:
+        problems.append("duplicate columns: " + ", ".join(duplicates))
+    if unknown:
+        problems.append("unknown columns: " + ", ".join(unknown))
+    if missing:
+        problems.append("missing required columns: " + ", ".join(missing))
+    if problems:
+        raise ValueError(f"{path}: invalid CSV header row ({'; '.join(problems)}).")
+    return headers
+
+
+def _clean_csv_row(row: dict[str | None, str | None], source: str) -> dict[str, str]:
+    if None in row:
+        raise ValueError(f"{source}: row has more values than the header.")
+    return {key: (value or "").strip() for key, value in row.items() if key is not None}
 
 
 def _parse_split_holdings(base_path: Path) -> list[Holding]:
@@ -255,9 +282,18 @@ def _parse_split_holdings(base_path: Path) -> list[Holding]:
     # Read base holdings.csv, indexed by holdingId
     base_rows: dict[str, dict[str, str]] = {}
     row_order: list[str] = []
+    required_headers = {
+        external for external, internal in HOLDINGS_KEY_MAP.items()
+        if internal not in OPTIONAL_HOLDING_FIELDS
+    }
     with open(base_path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
+        _validate_csv_headers(
+            reader, base_path, allowed=set(HOLDINGS_KEY_MAP) | {"holdingId"},
+            required=required_headers | {"holdingId"},
+        )
         for rownum, row in enumerate(reader, 2):
+            row = _clean_csv_row(row, f"{base_path}:{rownum}")
             hid = row.pop("holdingId", "").strip()
             if not hid:
                 raise ValueError(f"{base_path}:{rownum}: missing holdingId value.")
@@ -275,41 +311,44 @@ def _parse_split_holdings(base_path: Path) -> list[Holding]:
             continue
         with open(sat_path, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
+            _validate_csv_headers(
+                reader, sat_path, allowed=set(HOLDINGS_KEY_MAP) | {"holdingId"},
+                required={"holdingId"},
+            )
+            satellite_ids: set[str] = set()
             for rownum, row in enumerate(reader, 2):
+                row = _clean_csv_row(row, f"{sat_path}:{rownum}")
                 hid = row.pop("holdingId", "").strip()
                 if not hid:
                     raise ValueError(
                         f"{sat_path}:{rownum}: missing holdingId value."
                     )
                 if hid not in base_rows:
-                    warnings.warn(
-                        f"{sat_path}:{rownum}: holdingId '{hid}' not in "
-                        f"{base_path.name}.",
-                        stacklevel=2,
+                    raise ValueError(
+                        f"{sat_path}:{rownum}: holdingId '{hid}' not in {base_path.name}."
                     )
-                    continue
-                base_rows[hid].update(row)
+                if hid in satellite_ids:
+                    raise ValueError(f"{sat_path}:{rownum}: duplicate holdingId '{hid}'.")
+                satellite_ids.add(hid)
+                conflicts = sorted(
+                    key for key, value in row.items()
+                    if value and base_rows[hid].get(key) and base_rows[hid][key] != value
+                )
+                if conflicts:
+                    raise ValueError(
+                        f"{sat_path}:{rownum}: conflicting value(s) already present in "
+                        f"{base_path.name}: {', '.join(conflicts)}."
+                    )
+                base_rows[hid].update({key: value for key, value in row.items() if value})
 
     # Construct Holding objects
     holdings = []
     for hid in row_order:
         row = base_rows[hid]
-        try:
-            kwargs = _map_keys(
-                row, _HOLDINGS_KEY_MAP, base_path, _OPTIONAL_HOLDINGS_KEYS
-            )
-        except ValueError:
-            present = set(row.keys())
-            expected = {
-                k
-                for k, v in _HOLDINGS_KEY_MAP.items()
-                if v not in _OPTIONAL_HOLDINGS_KEYS
-            }
-            missing = expected - present
-            raise ValueError(
-                f"{base_path}: holdingId '{hid}': missing required column(s): "
-                f"{', '.join(sorted(missing))}."
-            )
+        kwargs = _map_keys(
+            row, HOLDINGS_KEY_MAP, f"{base_path}: holdingId {hid!r}",
+            OPTIONAL_HOLDING_FIELDS, reject_unknown=True,
+        )
         holdings.append(Holding(**kwargs))
 
     return holdings
@@ -320,20 +359,27 @@ def parse_holdings(path: str | Path) -> list[Holding]:
     # Auto-detect split format by checking for holdingId column
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
-        headers = reader.fieldnames or []
+        headers = _validate_csv_headers(
+            reader, path, allowed=set(HOLDINGS_KEY_MAP) | {"holdingId"},
+        )
     if "holdingId" in headers:
         return _parse_split_holdings(path)
     # Existing flat-CSV code path
     holdings = []
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
+        required_headers = {
+            external for external, internal in HOLDINGS_KEY_MAP.items()
+            if internal not in OPTIONAL_HOLDING_FIELDS
+        }
+        _validate_csv_headers(
+            reader, path, allowed=set(HOLDINGS_KEY_MAP), required=required_headers,
+        )
         for rownum, row in enumerate(reader, 2):
-            try:
-                kwargs = _map_keys(row, _HOLDINGS_KEY_MAP, path, _OPTIONAL_HOLDINGS_KEYS)
-            except ValueError:
-                present = set(row.keys()) if row else set()
-                expected = {k for k, v in _HOLDINGS_KEY_MAP.items() if v not in _OPTIONAL_HOLDINGS_KEYS}
-                missing = expected - present
-                raise ValueError(f"{path}:{rownum}: missing required column(s): {', '.join(sorted(missing))}.")
+            row = _clean_csv_row(row, f"{path}:{rownum}")
+            kwargs = _map_keys(
+                row, HOLDINGS_KEY_MAP, f"{path}:{rownum}",
+                OPTIONAL_HOLDING_FIELDS, reject_unknown=True,
+            )
             holdings.append(Holding(**kwargs))
     return holdings

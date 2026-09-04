@@ -1,0 +1,62 @@
+# CHYG 2026-06 filing data
+# rtn1-3 from Bloomberg; net/total assets from custodian; gains/flows from fund accounting.
+
+# Submission
+submissionType=NPORT-P
+liveTestFlag=TEST
+repPdEnd=2026-06-30
+repPdDate=2026-06-30
+isFinalFiling=N
+dateSigned=2026-07-31
+
+# Fund Financials
+totAssets=5507245.14
+totLiabs=265.28
+netAssets=5506979.86
+
+# Balance Sheet Items
+assetsAttrMiscSec=0
+assetsInvested=0
+amtPayOneYrBanksBorr=0
+amtPayOneYrCtrldComp=0
+amtPayOneYrOthAffil=0
+amtPayOneYrOther=265.28
+amtPayAftOneYrBanksBorr=0
+amtPayAftOneYrCtrldComp=0
+amtPayAftOneYrOthAffil=0
+amtPayAftOneYrOther=0
+delayDeliv=0
+standByCommit=0
+liquidPref=0
+isNonCashCollateral=N
+
+# Returns (rtn1-3 from Bloomberg; gains from fund accounting)
+rtn1=N/A
+rtn2=N/A
+rtn3=0.05
+netRealizedGainMon1=0.00
+netUnrealizedApprMon1=0.00
+netRealizedGainMon2=0.00
+netUnrealizedApprMon2=0.00
+netRealizedGainMon3=-320.75
+netUnrealizedApprMon3=-8219.18
+
+# Flows (from transfer agent / fund accounting)
+mon1Sales=0.00
+mon1Redemption=0.00
+mon1Reinvestment=N/A
+mon2Sales=250000.00
+mon2Redemption=0.00
+mon2Reinvestment=N/A
+mon3Sales=5246632.00
+mon3Redemption=0.00
+mon3Reinvestment=N/A
+
+# Designated Index
+nameDesignatedIndex=FTSE US High-Yield Market 0-5 Years 2% Capped Index
+indexIdentifier=CFIIH52C
+
+# B.3 Risk Metrics (Bloomberg durations × custodian market value)
+curMetricsJson=[{"curCd": "USD", "dv01_3month": "0.94", "dv100_3month": "93.69", "dv01_1year": "105.16", "dv100_1year": "10516.17", "dv01_5year": "1068.87", "dv100_5year": "106887.38", "dv01_10year": "0.00", "dv100_10year": "0.00", "dv01_30year": "29.02", "dv100_30year": "2901.85"}]
+creditSprdRiskIgJson={"3month": "0.94", "1year": "1.24", "5year": "92.05", "10year": "0.00", "30year": "0.00"}
+creditSprdRiskNonigJson={"3month": "0.00", "1year": "96.58", "5year": "893.72", "10year": "0.00", "30year": "29.02"}
